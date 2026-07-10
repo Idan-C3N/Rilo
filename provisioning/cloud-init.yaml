@@ -1,0 +1,15 @@
+#cloud-config
+package_update: true
+packages:
+  - curl
+  - git
+  - build-essential
+users:
+  - name: agent
+    shell: /bin/bash
+    sudo: false
+runcmd:
+  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  - apt-get install -y nodejs
+  - mkdir -p /opt/personal-agent/data
+  - chown -R agent:agent /opt/personal-agent
