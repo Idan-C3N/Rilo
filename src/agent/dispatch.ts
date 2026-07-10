@@ -3,6 +3,7 @@ import type { AppConfig } from '../config.js';
 import type { InboundMessage, ChannelAdapter, TypingController } from '../channels/adapter.js';
 import { getUserByIdentity, createUserWithIdentity, isAllowlisted } from '../db/users.js';
 import type { runAgentTurn, GenerateFn } from './core.js';
+import { maybeSummarize } from './summarize.js';
 
 export const NOT_AUTHORIZED =
   'You are not authorized to use this assistant. Ask the owner to allowlist you.';
@@ -15,6 +16,7 @@ export interface DispatchDeps {
   generate: GenerateFn;
   buildTools?: (userId: number) => Promise<import('ai').ToolSet>;
   heartbeatDefaultMin: number;
+  maybeSummarize?: typeof maybeSummarize;
 }
 
 export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Promise<void> {
@@ -40,6 +42,14 @@ export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Prom
       { userId: user.id, input: m.text },
     );
     await deps.adapter.send(m.channelUserId, reply);
+    try {
+      await (deps.maybeSummarize ?? maybeSummarize)(
+        { db, appCfg: deps.appCfg, generate: deps.generate },
+        user.id,
+      );
+    } catch {
+      // summarization failures must never break a reply
+    }
   } finally {
     typing.stop();
   }

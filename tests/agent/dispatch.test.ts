@@ -41,4 +41,23 @@ describe('handleInbound', () => {
     expect(sent).toEqual([['9', 'reply!']]);
     expect(typingEvents).toEqual(['start', 'stop']);
   });
+
+  it('invokes maybeSummarize after a successful reply', async () => {
+    const u = createUserWithIdentity(db, { channel: 'telegram', externalId: '11', heartbeat_interval_min: 30 });
+    setAllowlisted(db, u.id, true);
+    setOpenrouterKey(db, u.id, 'sk-or');
+    let calledWith: number | undefined;
+    const d = { ...deps(), maybeSummarize: async (_deps: any, userId: number) => { calledWith = userId; } };
+    await handleInbound(d, { channel: 'telegram', channelUserId: '11', text: 'hi', name: 'Z' });
+    expect(calledWith).toBe(u.id);
+  });
+
+  it('does not break the reply if maybeSummarize throws', async () => {
+    const u = createUserWithIdentity(db, { channel: 'telegram', externalId: '12', heartbeat_interval_min: 30 });
+    setAllowlisted(db, u.id, true);
+    setOpenrouterKey(db, u.id, 'sk-or');
+    const d = { ...deps(), maybeSummarize: async () => { throw new Error('boom'); } };
+    await handleInbound(d, { channel: 'telegram', channelUserId: '12', text: 'hi', name: 'Z' });
+    expect(sent).toEqual([['12', 'reply!']]);
+  });
 });

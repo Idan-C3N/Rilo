@@ -6,6 +6,7 @@ import { createTelegramAdapter } from './channels/telegram.js';
 import { handleInbound } from './agent/dispatch.js';
 import { runAgentTurn } from './agent/core.js';
 import type { GenerateFn } from './agent/core.js';
+import { maybeSummarize } from './agent/summarize.js';
 import { startScheduler } from './scheduler/scheduler.js';
 import { fireReminder } from './scheduler/fire.js';
 // TODO(Task 12): wire real tool building once src/agent/tools/index.ts exists.
@@ -35,7 +36,16 @@ const buildTools = undefined;
 
 adapter.onMessage((m) =>
   handleInbound(
-    { db, appCfg, adapter, runTurn: runAgentTurn, generate, buildTools, heartbeatDefaultMin: appCfg.heartbeatDefaultMin },
+    {
+      db,
+      appCfg,
+      adapter,
+      runTurn: runAgentTurn,
+      generate,
+      buildTools,
+      heartbeatDefaultMin: appCfg.heartbeatDefaultMin,
+      maybeSummarize,
+    },
     m,
   ),
 );
