@@ -4,6 +4,7 @@ export interface AppConfig {
   telegramToken: string;
   openrouterKeyFallback?: string;
   webPort: number;
+  webBaseUrl: string;
   heartbeatDefaultMin: number;
 }
 
@@ -14,12 +15,14 @@ function req(env: NodeJS.ProcessEnv, key: string): string {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
+  const webPort = Number(env.WEB_PORT ?? '8080');
   return {
     dbPath: req(env, 'DB_PATH'),
     encKey: req(env, 'ENC_KEY'),
     telegramToken: req(env, 'TELEGRAM_TOKEN'),
     openrouterKeyFallback: env.OPENROUTER_KEY || undefined,
-    webPort: Number(env.WEB_PORT ?? '8080'),
+    webPort,
+    webBaseUrl: env.WEB_BASE_URL || `http://localhost:${webPort}`,
     heartbeatDefaultMin: Number(env.HEARTBEAT_DEFAULT_MIN ?? '30'),
   };
 }

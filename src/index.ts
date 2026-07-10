@@ -42,6 +42,7 @@ adapter.onMessage((m) =>
       buildTools,
       heartbeatDefaultMin: appCfg.heartbeatDefaultMin,
       maybeSummarize,
+      webBaseUrl: appCfg.webBaseUrl,
     },
     m,
   ),

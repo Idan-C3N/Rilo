@@ -17,6 +17,7 @@ const adapter = {
 const deps = () => ({
   db, appCfg: {} as any, adapter, runTurn: runAgentTurn,
   generate: async () => ({ text: 'reply!' }), heartbeatDefaultMin: 30,
+  webBaseUrl: 'http://localhost:8080',
 });
 
 beforeAll(async () => {
@@ -59,5 +60,16 @@ describe('handleInbound', () => {
     const d = { ...deps(), maybeSummarize: async () => { throw new Error('boom'); } };
     await handleInbound(d, { channel: 'telegram', channelUserId: '12', text: 'hi', name: 'Z' });
     expect(sent).toEqual([['12', 'reply!']]);
+  });
+
+  it('handles /login by sending a code + link, no model call', async () => {
+    const u = createUserWithIdentity(db, { channel: 'telegram', externalId: '30', heartbeat_interval_min: 30 });
+    setAllowlisted(db, u.id, true);
+    let modelCalled = false;
+    const d = { ...deps(), webBaseUrl: 'http://host:8080', generate: async () => { modelCalled = true; return { text: 'x' }; } };
+    await handleInbound(d as any, { channel: 'telegram', channelUserId: '30', text: '/login', name: 'Z' });
+    expect(modelCalled).toBe(false);
+    expect(sent[0][1]).toMatch(/http:\/\/host:8080\/login\?token=/);
+    expect(sent[0][1]).toMatch(/\d{6}/);
   });
 });
