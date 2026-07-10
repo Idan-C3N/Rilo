@@ -23,8 +23,8 @@ CREATE INDEX IF NOT EXISTS idx_identities_lookup ON identities(channel, external
 
 CREATE TABLE IF NOT EXISTS config (
   user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  cheap_model TEXT NOT NULL DEFAULT 'anthropic/claude-3.5-haiku',
-  strong_model TEXT NOT NULL DEFAULT 'anthropic/claude-3.5-sonnet',
+  cheap_model TEXT NOT NULL DEFAULT 'anthropic/claude-haiku-4.5',
+  strong_model TEXT NOT NULL DEFAULT 'anthropic/claude-sonnet-5',
   openrouter_key_enc TEXT,
   settings_json TEXT NOT NULL DEFAULT '{}'
 );
