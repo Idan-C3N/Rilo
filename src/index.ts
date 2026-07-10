@@ -50,5 +50,12 @@ adapter.onMessage((m) =>
 seedHeartbeats(db, appCfg);
 startScheduler({ db, appCfg, adapter, generate, channel: adapter.channel, fireReminder, fireHeartbeat });
 await startWeb({ db, appCfg, port: appCfg.webPort });
-adapter.start();
-console.log('personal-agent running');
+
+// grammy's start() runs long polling; if the token is bad or Telegram is
+// unreachable it rejects (e.g. getMe 401). Surface it clearly instead of a
+// bare unhandled rejection — the scheduler + web UI keep running regardless.
+Promise.resolve(adapter.start()).catch((err) => {
+  console.error('Telegram adapter failed to start (check TELEGRAM_TOKEN / connectivity):', err);
+});
+
+console.log('personal-agent running (web UI + scheduler up; Telegram connecting…)');
