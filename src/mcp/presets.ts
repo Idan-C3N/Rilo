@@ -30,6 +30,19 @@ export interface McpPreset {
 // Deliberately tiny to start — validate the flow, then grow the catalog.
 export const MCP_PRESETS: McpPreset[] = [
   {
+    id: 'slack',
+    label: 'Slack',
+    description:
+      'Read/search/send Slack messages. Create a Slack app, add bot scopes, install it to your workspace, then paste the Bot token (xoxb-…) and your workspace/team ID (T…).',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-slack'],
+    secrets: [
+      { field: 'SLACK_BOT_TOKEN', label: 'Bot token', placeholder: 'xoxb-...' },
+      { field: 'SLACK_TEAM_ID', label: 'Workspace/Team ID', placeholder: 'T0123ABC' },
+    ],
+  },
+  {
     id: 'fetch',
     label: 'Web Fetch',
     description: 'Fetch and read the contents of any URL. No key required.',
