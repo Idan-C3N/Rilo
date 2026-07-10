@@ -84,3 +84,14 @@ CREATE TABLE IF NOT EXISTS sessions (
   verified INTEGER NOT NULL DEFAULT 0,
   expires_at INTEGER NOT NULL
 );
+
+-- Per-user OAuth tokens for native service integrations (e.g. Google).
+-- token_enc is an encrypted refresh token. New table → applies cleanly to an
+-- existing DB on next boot (no ALTER migration needed).
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,       -- 'google'
+  token_enc TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, provider)
+);
