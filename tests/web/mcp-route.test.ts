@@ -57,9 +57,11 @@ describe('mcp preset catalog', () => {
     expect(listMcpServers(db, uid)).toEqual([]);
   });
 
-  it('GET /mcp lists the preset catalog', async () => {
+  it('GET /mcp renders Services page: built-in web search + connect catalog', async () => {
     const res = await app.inject({ method: 'GET', url: '/mcp', headers: { cookie } });
-    expect(res.body).toContain('Quick add');
+    expect(res.body).toContain('Built in');
+    expect(res.body).toContain('Web Search');
+    expect(res.body).toContain('Connect a service');
     expect(res.body).toContain('Web Fetch');
   });
 });

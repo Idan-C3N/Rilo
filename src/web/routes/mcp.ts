@@ -19,12 +19,15 @@ function renderPresets(): string {
       <form method="post" action="/mcp/preset">
         <input type="hidden" name="preset_id" value="${esc(p.id)}">
         ${fields}
-        <button type="submit">Add ${esc(p.label)}</button>
+        <button type="submit">Connect ${esc(p.label)}</button>
       </form>
     </div>`;
   }).join('');
-  return `<h2>Quick add</h2>${cards}`;
+  return `<h2>Connect a service</h2>${cards}`;
 }
+
+const BUILTIN_SECTION = `<h2>Built in</h2>
+  <div class="card"><b>🔎 Web Search</b> — always on, no setup needed.</div>`;
 
 function parseCreds(text: string): Record<string, string> | undefined {
   const out: Record<string, string> = {};
@@ -50,11 +53,13 @@ export function registerMcpRoutes(app: FastifyInstance, db: DB): void {
       .join('');
     reply.type('text/html').send(
       layout(
-        'MCP Servers',
-        `${rows || '<p>No servers yet.</p>'}
+        'Services',
+        `${BUILTIN_SECTION}
+        <h2>Your services</h2>
+        ${rows || '<p>No services connected yet.</p>'}
         ${renderPresets()}
-        <details><summary>Advanced: add manually</summary>
-        <div class="card"><h2>Add server</h2>
+        <details><summary>Advanced: connect a custom MCP server manually</summary>
+        <div class="card"><h3>Add server</h3>
         <form method="post" action="/mcp">
           <label>Name<input name="name" required></label>
           <label>Transport
