@@ -11,8 +11,7 @@ import { startScheduler } from './scheduler/scheduler.js';
 import { fireReminder } from './scheduler/fire.js';
 import { buildToolsFor } from './agent/tools/index.js';
 import { fireHeartbeat, seedHeartbeats } from './scheduler/heartbeat.js';
-// TODO(Task 25): wire web server once src/web/server.ts exists.
-// import { startWeb } from './web/server.js';
+import { startWeb } from './web/server.js';
 
 const appCfg = loadConfig(process.env);
 await initCrypto(appCfg.encKey);
@@ -50,6 +49,6 @@ adapter.onMessage((m) =>
 
 seedHeartbeats(db, appCfg);
 startScheduler({ db, appCfg, adapter, generate, channel: adapter.channel, fireReminder, fireHeartbeat });
-// TODO(Task 25): await startWeb({ db, appCfg, adapter });
+await startWeb({ db, appCfg, port: appCfg.webPort });
 adapter.start();
 console.log('personal-agent running');
