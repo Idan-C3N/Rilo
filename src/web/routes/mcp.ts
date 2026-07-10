@@ -18,7 +18,7 @@ export function registerMcpRoutes(app: FastifyInstance, db: DB): void {
     const servers = listMcpServers(db, userId);
     const rows = servers
       .map(
-        (s) => `<div class="card"><b>${esc(s.name)}</b> (${s.transport}) ${s.enabled ? '🟢' : '⚪️'}
+        (s) => `<div class="card"><b>${esc(s.name)}</b> (${esc(s.transport)}) ${s.enabled ? '🟢' : '⚪️'}
         <div>${esc(s.url ?? s.command ?? '')}</div>
         <form method="post" action="/mcp/${s.id}/toggle" style="display:inline"><button>${s.enabled ? 'Disable' : 'Enable'}</button></form>
         <form method="post" action="/mcp/${s.id}/delete" style="display:inline"><button>Delete</button></form>
