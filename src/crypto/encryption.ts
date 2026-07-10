@@ -1,4 +1,6 @@
-import sodium from 'libsodium-wrappers';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const sodium = require('libsodium-wrappers');
 
 let key: Uint8Array | null = null;
 
