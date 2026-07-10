@@ -6,10 +6,12 @@ import { createTelegramAdapter } from './channels/telegram.js';
 import { handleInbound } from './agent/dispatch.js';
 import { runAgentTurn } from './agent/core.js';
 import type { GenerateFn } from './agent/core.js';
+import { startScheduler } from './scheduler/scheduler.js';
+import { fireReminder } from './scheduler/fire.js';
 // TODO(Task 12): wire real tool building once src/agent/tools/index.ts exists.
 // import { buildToolsFor } from './agent/tools/index.js';
-// TODO(Task 13/19): wire scheduler once src/scheduler/scheduler.ts exists.
-// import { startScheduler } from './scheduler/scheduler.js';
+// TODO(Task 19): implement fireHeartbeat in src/scheduler/heartbeat.ts.
+// import { fireHeartbeat } from './scheduler/heartbeat.js';
 // TODO(Task 25): wire web server once src/web/server.ts exists.
 // import { startWeb } from './web/server.js';
 
@@ -38,7 +40,7 @@ adapter.onMessage((m) =>
   ),
 );
 
-// TODO(Task 13/19): startScheduler({ db, appCfg, adapter, generate, channel: adapter.channel });
+startScheduler({ db, appCfg, adapter, generate, channel: adapter.channel, fireReminder, fireHeartbeat: async () => {} });
 // TODO(Task 25): await startWeb({ db, appCfg, adapter });
 adapter.start();
 console.log('personal-agent running');
