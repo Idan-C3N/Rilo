@@ -16,7 +16,7 @@ export function resolveModels(
   const openrouter = createOpenRouter({ apiKey });
   const cfg = getConfig(db, userId);
   return {
-    cheap: openrouter(cfg.cheap_model) as any,
-    strong: openrouter(cfg.strong_model) as any,
+    cheap: openrouter.chat(cfg.cheap_model),
+    strong: openrouter.chat(cfg.strong_model),
   };
 }
