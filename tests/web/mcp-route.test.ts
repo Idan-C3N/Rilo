@@ -21,6 +21,49 @@ beforeEach(async () => {
   app = await buildWebApp({ db, appCfg: {} as any });
 });
 
+describe('mcp preset catalog', () => {
+  it('one-click adds a no-secret preset (Web Fetch) with baked-in transport/command', async () => {
+    const res = await app.inject({
+      method: 'POST', url: '/mcp/preset', headers: { cookie },
+      payload: { preset_id: 'fetch' },
+    });
+    expect(res.statusCode).toBe(302);
+    const s = listMcpServers(db, uid)[0]!;
+    expect(s.name).toBe('Web Fetch');
+    expect(s.transport).toBe('stdio');
+    expect(s.command).toBe('npx');
+    expect(s.args).toContain('@modelcontextprotocol/server-fetch');
+    expect(s.creds).toBeUndefined();
+  });
+
+  it('custom-http preset maps __url to the server url and Authorization to creds', async () => {
+    const res = await app.inject({
+      method: 'POST', url: '/mcp/preset', headers: { cookie },
+      payload: { preset_id: 'custom-http', __url: 'https://my/mcp', Authorization: 'Bearer tok' },
+    });
+    expect(res.statusCode).toBe(302);
+    const s = listMcpServers(db, uid)[0]!;
+    expect(s.transport).toBe('http');
+    expect(s.url).toBe('https://my/mcp');
+    expect(s.creds).toEqual({ Authorization: 'Bearer tok' });
+  });
+
+  it('unknown preset id is a no-op redirect', async () => {
+    const res = await app.inject({
+      method: 'POST', url: '/mcp/preset', headers: { cookie },
+      payload: { preset_id: 'nope' },
+    });
+    expect(res.statusCode).toBe(302);
+    expect(listMcpServers(db, uid)).toEqual([]);
+  });
+
+  it('GET /mcp lists the preset catalog', async () => {
+    const res = await app.inject({ method: 'GET', url: '/mcp', headers: { cookie } });
+    expect(res.body).toContain('Quick add');
+    expect(res.body).toContain('Web Fetch');
+  });
+});
+
 describe('mcp route', () => {
   it('adds an http mcp server with parsed creds', async () => {
     const res = await app.inject({

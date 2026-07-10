@@ -1,0 +1,56 @@
+import type { McpTransport } from '../db/mcp.js';
+
+/**
+ * A secret the preset needs from the user. Its value is stored in the server's
+ * creds map under `field` — which becomes an ENV var (stdio) or an HTTP header
+ * (http/sse) when the MCP client is started.
+ */
+export interface PresetSecret {
+  field: string;
+  label: string;
+  placeholder?: string;
+}
+
+/**
+ * A one-click MCP server definition. The transport/command/url are baked in so
+ * the user only supplies the secret(s). stdio presets launch via `npx -y` on
+ * the host (no manual install).
+ */
+export interface McpPreset {
+  id: string;
+  label: string;
+  description: string;
+  transport: McpTransport;
+  command?: string;
+  args?: string[];
+  url?: string;
+  secrets: PresetSecret[];
+}
+
+// Deliberately tiny to start — validate the flow, then grow the catalog.
+export const MCP_PRESETS: McpPreset[] = [
+  {
+    id: 'fetch',
+    label: 'Web Fetch',
+    description: 'Fetch and read the contents of any URL. No key required.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-fetch'],
+    secrets: [],
+  },
+  {
+    id: 'custom-http',
+    label: 'Custom hosted MCP (URL)',
+    description: 'Connect any hosted MCP server by URL. Optional bearer token.',
+    transport: 'http',
+    url: '', // filled from the __url field the user provides
+    secrets: [
+      { field: '__url', label: 'Server URL', placeholder: 'https://host/mcp' },
+      { field: 'Authorization', label: 'Auth header (optional)', placeholder: 'Bearer xxx' },
+    ],
+  },
+];
+
+export function getPreset(id: string): McpPreset | undefined {
+  return MCP_PRESETS.find((p) => p.id === id);
+}

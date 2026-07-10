@@ -1,7 +1,30 @@
 import type { FastifyInstance } from 'fastify';
 import type { DB } from '../../db/db.js';
 import { addMcpServer, listMcpServers, setMcpEnabled, deleteMcpServer, type McpTransport } from '../../db/mcp.js';
+import { MCP_PRESETS, getPreset } from '../../mcp/presets.js';
 import { layout, esc } from '../render.js';
+
+/** Render the one-click preset catalog: a small card + form per preset. */
+function renderPresets(): string {
+  const cards = MCP_PRESETS.map((p) => {
+    const fields = p.secrets
+      .map(
+        (s) =>
+          `<label>${esc(s.label)}<input name="${esc(s.field)}" placeholder="${esc(s.placeholder ?? '')}"></label>`,
+      )
+      .join('');
+    return `<div class="card">
+      <b>${esc(p.label)}</b>
+      <div>${esc(p.description)}</div>
+      <form method="post" action="/mcp/preset">
+        <input type="hidden" name="preset_id" value="${esc(p.id)}">
+        ${fields}
+        <button type="submit">Add ${esc(p.label)}</button>
+      </form>
+    </div>`;
+  }).join('');
+  return `<h2>Quick add</h2>${cards}`;
+}
 
 function parseCreds(text: string): Record<string, string> | undefined {
   const out: Record<string, string> = {};
@@ -29,6 +52,8 @@ export function registerMcpRoutes(app: FastifyInstance, db: DB): void {
       layout(
         'MCP Servers',
         `${rows || '<p>No servers yet.</p>'}
+        ${renderPresets()}
+        <details><summary>Advanced: add manually</summary>
         <div class="card"><h2>Add server</h2>
         <form method="post" action="/mcp">
           <label>Name<input name="name" required></label>
@@ -40,9 +65,38 @@ export function registerMcpRoutes(app: FastifyInstance, db: DB): void {
           <label>URL (http/sse)<input name="url" placeholder="https://host/mcp"></label>
           <label>Creds (KEY=VALUE per line)<textarea name="creds" rows="3"></textarea></label>
           <button type="submit">Add</button>
-        </form></div>`,
+        </form></div></details>`,
       ),
     );
+  });
+
+  // One-click add from the preset catalog: build the server row from the preset,
+  // mapping provided secret fields into creds (a special `__url` field sets the
+  // server URL for hosted MCPs rather than a credential).
+  app.post<{ Body: Record<string, string> }>('/mcp/preset', async (req, reply) => {
+    const userId = (req as any).userId as number;
+    const preset = getPreset(req.body.preset_id ?? '');
+    if (!preset) {
+      reply.redirect('/mcp');
+      return;
+    }
+    const creds: Record<string, string> = {};
+    let url = preset.url;
+    for (const s of preset.secrets) {
+      const v = (req.body[s.field] ?? '').trim();
+      if (!v) continue;
+      if (s.field === '__url') url = v;
+      else creds[s.field] = v;
+    }
+    addMcpServer(db, userId, {
+      name: preset.label,
+      transport: preset.transport,
+      command: preset.command,
+      args: preset.args ?? [],
+      url: url || undefined,
+      creds: Object.keys(creds).length ? creds : undefined,
+    });
+    reply.redirect('/mcp');
   });
 
   app.post<{ Body: { name: string; transport: McpTransport; command?: string; args?: string; url?: string; creds?: string } }>(
