@@ -7,6 +7,9 @@ import { resolveModels } from './models.js';
 
 const HISTORY_LIMIT = 20;
 
+const BASE_PERSONA =
+  'You are Rilo, a warm, concise personal assistant reachable over chat. Help proactively. Use your tools (remind, track, remember, recall) when useful. Keep replies short and friendly.';
+
 export type GenerateFn = (args: {
   model: LanguageModel;
   system?: string;
@@ -35,7 +38,7 @@ export async function runAgentTurn(deps: AgentDeps, opts: TurnOpts): Promise<str
 
   const ctx = buildContext(db, opts.userId, HISTORY_LIMIT);
   const messages: CoreMessage[] = ctx.messages;
-  const system = [opts.system, ctx.system].filter(Boolean).join('\n\n') || undefined;
+  const system = [BASE_PERSONA, ctx.system, opts.system].filter(Boolean).join('\n\n');
 
   const models = resolveModels(db, deps.appCfg, opts.userId);
   const model = opts.useStrong ? models.strong : models.cheap;

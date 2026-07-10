@@ -4,7 +4,7 @@ import type { Job } from '../db/jobs.js';
 import type { SchedulerDeps } from './scheduler.js';
 import type { DB } from '../db/db.js';
 import type { AppConfig } from '../config.js';
-import { getUserById, getExternalId, listAllowlisted } from '../db/users.js';
+import { getUserById, getExternalId, listAllowlisted, isAllowlisted } from '../db/users.js';
 import { addJob, pendingHeartbeat } from '../db/jobs.js';
 import { addMessage } from '../db/messages.js';
 import { recall } from '../db/memory.js';
@@ -39,6 +39,7 @@ export async function decideHeartbeat(
 export async function fireHeartbeat(deps: HeartbeatDeps, job: Job): Promise<void> {
   const user = getUserById(deps.db, job.user_id);
   if (!user) return; // user deleted — nothing to reschedule from
+  if (!isAllowlisted(deps.db, user.id)) return; // de-allowlisted: stop the chain (re-allowlist + restart reseeds)
 
   // 1. ALWAYS reschedule the next heartbeat first (before quiet/identity checks).
   addJob(deps.db, {

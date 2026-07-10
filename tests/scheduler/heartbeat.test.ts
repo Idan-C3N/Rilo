@@ -89,4 +89,11 @@ describe('heartbeat', () => {
     expect(pendingHeartbeat(db, uid)).toBeDefined();
     expect(sent).toEqual([]);
   });
+
+  it('does not reschedule or message for a non-allowlisted user', async () => {
+    setAllowlisted(db, uid, false);
+    await fireHeartbeat(deps({ act: true, message: 'should not send' }), job());
+    expect(pendingHeartbeat(db, uid)).toBeUndefined();
+    expect(sent).toEqual([]);
+  });
 });

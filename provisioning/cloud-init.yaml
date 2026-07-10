@@ -4,6 +4,7 @@ packages:
   - curl
   - git
   - build-essential
+  - sqlite3
 users:
   - name: agent
     shell: /bin/bash

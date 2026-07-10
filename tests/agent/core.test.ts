@@ -52,5 +52,13 @@ describe('runAgentTurn', () => {
     await runAgentTurn({ db, appCfg: {} as any, generate }, { userId: uid, input: 'what was I planning?' });
 
     expect(seenSystem).toContain('User is planning a trip to Japan in October.');
+    expect(seenSystem).toContain('Rilo');
+  });
+
+  it('always includes the base persona in the system prompt', async () => {
+    let seenSystem: string | undefined;
+    const generate = async (args: any) => { seenSystem = args.system; return { text: 'ok' }; };
+    await runAgentTurn({ db, appCfg: {} as any, generate }, { userId: uid, input: 'hi' });
+    expect(seenSystem).toContain('Rilo');
   });
 });

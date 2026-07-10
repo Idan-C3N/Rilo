@@ -1,6 +1,6 @@
 import type { Job } from '../db/jobs.js';
 import type { SchedulerDeps } from './scheduler.js';
-import { getUserById, getExternalId } from '../db/users.js';
+import { getUserById, getExternalId, isAllowlisted } from '../db/users.js';
 import { resolveModels } from '../agent/models.js';
 import { addMessage } from '../db/messages.js';
 
@@ -13,6 +13,7 @@ const FOLLOWUP_SYSTEM =
 export async function fireReminder(deps: SchedulerDeps, job: Job): Promise<void> {
   const user = getUserById(deps.db, job.user_id);
   if (!user) return;
+  if (!isAllowlisted(deps.db, user.id)) return;
   const ext = getExternalId(deps.db, user.id, deps.channel);
   if (!ext) return;
   const text = String(job.payload.text ?? job.payload.task ?? 'your reminder');
