@@ -16,7 +16,7 @@ API="https://api.hetzner.cloud/v1"
 auth=(-H "Authorization: Bearer ${HCLOUD_TOKEN}" -H "Content-Type: application/json")
 
 # 1. Firewall
-fw_id=$(curl -s "${auth[@]}" -X POST "${API}/firewalls" -d @- <<JSON | python3 -c 'import sys,json;print(json.load(sys.stdin)["firewall"]["id"])'
+fw_id=$(curl -sf "${auth[@]}" -X POST "${API}/firewalls" -d @- <<JSON | python3 -c 'import sys,json;print(json.load(sys.stdin)["firewall"]["id"])'
 {
   "name": "${SERVER_NAME}-fw",
   "rules": [
@@ -29,8 +29,7 @@ JSON
 echo "firewall ${fw_id}"
 
 # 2. Server with cloud-init + firewall attached
-user_data=$(cat provisioning/cloud-init.yaml)
-curl -s "${auth[@]}" -X POST "${API}/servers" -d @- <<JSON | python3 -c 'import sys,json;d=json.load(sys.stdin);print("server", d["server"]["id"], d["server"]["public_net"]["ipv4"]["ip"])'
+curl -sf "${auth[@]}" -X POST "${API}/servers" -d @- <<JSON | python3 -c 'import sys,json;d=json.load(sys.stdin);print("server", d["server"]["id"], d["server"]["public_net"]["ipv4"]["ip"])'
 {
   "name": "${SERVER_NAME}",
   "server_type": "${SERVER_TYPE}",
