@@ -14,7 +14,7 @@ export interface DispatchDeps {
   adapter: Pick<ChannelAdapter, 'send'> & { typingFor(id: string): TypingController };
   runTurn: typeof runAgentTurn;
   generate: GenerateFn;
-  buildTools?: (userId: number) => Promise<import('ai').ToolSet>;
+  buildTools?: (userId: number) => Promise<{ tools: import('ai').ToolSet; closeAll: () => Promise<void> }>;
   heartbeatDefaultMin: number;
   maybeSummarize?: typeof maybeSummarize;
 }

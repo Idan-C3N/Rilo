@@ -18,7 +18,7 @@ export interface AgentDeps {
   db: DB;
   appCfg: Pick<AppConfig, 'openrouterKeyFallback'>;
   generate: GenerateFn;
-  buildTools?: (userId: number) => Promise<ToolSet>;
+  buildTools?: (userId: number) => Promise<{ tools: ToolSet; closeAll: () => Promise<void> }>;
 }
 
 export interface TurnOpts {
@@ -40,15 +40,19 @@ export async function runAgentTurn(deps: AgentDeps, opts: TurnOpts): Promise<str
 
   const models = resolveModels(db, deps.appCfg, opts.userId);
   const model = opts.useStrong ? models.strong : models.cheap;
-  const tools = deps.buildTools ? await deps.buildTools(opts.userId) : undefined;
+  const built = deps.buildTools ? await deps.buildTools(opts.userId) : undefined;
 
-  const result = await deps.generate({
-    model,
-    system: opts.system,
-    messages,
-    tools,
-  });
+  try {
+    const result = await deps.generate({
+      model,
+      system: opts.system,
+      messages,
+      tools: built?.tools,
+    });
 
-  addMessage(db, opts.userId, 'assistant', result.text);
-  return result.text;
+    addMessage(db, opts.userId, 'assistant', result.text);
+    return result.text;
+  } finally {
+    await built?.closeAll();
+  }
 }

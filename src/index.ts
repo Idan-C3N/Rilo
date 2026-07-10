@@ -9,8 +9,7 @@ import type { GenerateFn } from './agent/core.js';
 import { maybeSummarize } from './agent/summarize.js';
 import { startScheduler } from './scheduler/scheduler.js';
 import { fireReminder } from './scheduler/fire.js';
-// TODO(Task 12): wire real tool building once src/agent/tools/index.ts exists.
-// import { buildToolsFor } from './agent/tools/index.js';
+import { buildToolsFor } from './agent/tools/index.js';
 import { fireHeartbeat, seedHeartbeats } from './scheduler/heartbeat.js';
 // TODO(Task 25): wire web server once src/web/server.ts exists.
 // import { startWeb } from './web/server.js';
@@ -30,8 +29,7 @@ const generate: GenerateFn = async (args) =>
 
 const adapter = createTelegramAdapter({ token: appCfg.telegramToken });
 
-// TODO(Task 12): replace with real buildTools = (userId) => buildToolsFor({ db, userId });
-const buildTools = undefined;
+const buildTools = (userId: number) => buildToolsFor({ db, userId });
 
 adapter.onMessage((m) =>
   handleInbound(
