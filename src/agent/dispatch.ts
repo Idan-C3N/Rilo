@@ -50,7 +50,7 @@ export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Prom
   try {
     const reply = await deps.runTurn(
       { db, appCfg: deps.appCfg, generate: deps.generate, buildTools: deps.buildTools },
-      { userId: user.id, input: m.text },
+      { userId: user.id, input: m.text, useStrong: true },
     );
     await deps.adapter.send(m.channelUserId, reply);
     try {
