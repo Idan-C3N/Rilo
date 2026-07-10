@@ -3,6 +3,7 @@ import type { ChannelAdapter, InboundMessage, TypingController } from './adapter
 
 export interface BotLike {
   on(event: 'message:text', cb: (ctx: any) => Promise<void> | void): void;
+  catch?(handler: (err: unknown) => void): void;
   start(): void;
   stop(): Promise<void>;
   api: {
@@ -10,6 +11,8 @@ export interface BotLike {
     sendChatAction(chatId: string | number, action: string): Promise<unknown>;
   };
 }
+
+const ERROR_REPLY = '⚠️ Something went wrong handling that. Try again in a moment.';
 
 export interface TelegramDeps {
   token: string;
@@ -26,12 +29,30 @@ export function createTelegramAdapter(
 
   bot.on('message:text', async (ctx: any) => {
     if (!handler) return;
-    await handler({
-      channel: 'telegram',
-      channelUserId: String(ctx.from.id),
-      text: ctx.message.text,
-      name: ctx.from.first_name,
-    });
+    const channelUserId = String(ctx.from.id);
+    // A failure in the app handler (LLM error, tool crash, etc.) must NOT
+    // propagate to grammy — an unhandled middleware error tears down the whole
+    // polling loop. Contain it here: log, and let the user know.
+    try {
+      await handler({
+        channel: 'telegram',
+        channelUserId,
+        text: ctx.message.text,
+        name: ctx.from.first_name,
+      });
+    } catch (err) {
+      console.error(`inbound handler failed for ${channelUserId}:`, err);
+      try {
+        await bot.api.sendMessage(channelUserId, ERROR_REPLY);
+      } catch (sendErr) {
+        console.error('failed to send error reply:', sendErr);
+      }
+    }
+  });
+
+  // Backstop: never let any error kill long polling.
+  bot.catch?.((err) => {
+    console.error('grammy bot error (contained):', err);
   });
 
   return {
