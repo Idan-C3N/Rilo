@@ -6,10 +6,11 @@ let key: Uint8Array | null = null;
 
 export async function initCrypto(base64Key: string): Promise<void> {
   await sodium.ready;
-  key = sodium.from_base64(base64Key, sodium.base64_variants.ORIGINAL);
-  if (key.length !== sodium.crypto_secretbox_KEYBYTES) {
+  const k: Uint8Array = sodium.from_base64(base64Key, sodium.base64_variants.ORIGINAL);
+  if (k.length !== sodium.crypto_secretbox_KEYBYTES) {
     throw new Error(`ENC_KEY must decode to ${sodium.crypto_secretbox_KEYBYTES} bytes`);
   }
+  key = k;
 }
 
 function requireKey(): Uint8Array {
