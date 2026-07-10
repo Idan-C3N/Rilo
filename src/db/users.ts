@@ -2,7 +2,6 @@ import type { DB } from './db.js';
 
 export interface User {
   id: number;
-  telegram_id: string | null;
   name: string | null;
   tz: string;
   quiet_start: number;
@@ -11,26 +10,57 @@ export interface User {
   allowlisted: number;
 }
 
-export function getUserByTelegramId(db: DB, tgId: string): User | undefined {
-  return db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(tgId) as User | undefined;
-}
-
 export function createUser(
   db: DB,
-  opts: { telegram_id: string; name?: string; heartbeat_interval_min: number },
+  opts: { name?: string; heartbeat_interval_min: number },
 ): User {
   const info = db
-    .prepare(
-      'INSERT INTO users (telegram_id, name, heartbeat_interval_min, created_at) VALUES (?, ?, ?, ?)',
-    )
-    .run(opts.telegram_id, opts.name ?? null, opts.heartbeat_interval_min, nowMs());
+    .prepare('INSERT INTO users (name, heartbeat_interval_min, created_at) VALUES (?, ?, ?)')
+    .run(opts.name ?? null, opts.heartbeat_interval_min, nowMs());
   const userId = Number(info.lastInsertRowid);
   db.prepare('INSERT INTO config (user_id) VALUES (?)').run(userId);
   return db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User;
 }
 
-export function isAllowlisted(db: DB, tgId: string): boolean {
-  const row = db.prepare('SELECT allowlisted FROM users WHERE telegram_id = ?').get(tgId) as
+export function linkIdentity(db: DB, userId: number, channel: string, externalId: string): number {
+  const info = db
+    .prepare('INSERT INTO identities (user_id, channel, external_id, created_at) VALUES (?, ?, ?, ?)')
+    .run(userId, channel, externalId, nowMs());
+  return Number(info.lastInsertRowid);
+}
+
+export function createUserWithIdentity(
+  db: DB,
+  opts: { channel: string; externalId: string; name?: string; heartbeat_interval_min: number },
+): User {
+  const user = createUser(db, { name: opts.name, heartbeat_interval_min: opts.heartbeat_interval_min });
+  linkIdentity(db, user.id, opts.channel, opts.externalId);
+  return user;
+}
+
+export function getUserByIdentity(db: DB, channel: string, externalId: string): User | undefined {
+  return db
+    .prepare(
+      `SELECT u.* FROM users u
+       JOIN identities i ON i.user_id = u.id
+       WHERE i.channel = ? AND i.external_id = ?`,
+    )
+    .get(channel, externalId) as User | undefined;
+}
+
+export function getExternalId(db: DB, userId: number, channel: string): string | undefined {
+  const row = db
+    .prepare('SELECT external_id FROM identities WHERE user_id = ? AND channel = ?')
+    .get(userId, channel) as { external_id: string } | undefined;
+  return row?.external_id;
+}
+
+export function getUserById(db: DB, id: number): User | undefined {
+  return db.prepare('SELECT * FROM users WHERE id = ?').get(id) as User | undefined;
+}
+
+export function isAllowlisted(db: DB, userId: number): boolean {
+  const row = db.prepare('SELECT allowlisted FROM users WHERE id = ?').get(userId) as
     | { allowlisted: number }
     | undefined;
   return !!row && row.allowlisted === 1;

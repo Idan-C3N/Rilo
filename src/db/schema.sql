@@ -1,7 +1,5 @@
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  telegram_id TEXT UNIQUE,
-  phone TEXT,
   name TEXT,
   tz TEXT NOT NULL DEFAULT 'UTC',
   quiet_start INTEGER NOT NULL DEFAULT 22,   -- hour 0-23 local
@@ -10,6 +8,18 @@ CREATE TABLE IF NOT EXISTS users (
   allowlisted INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
+
+-- Normalized per-channel identity. A user has one row per messaging platform
+-- they've talked to us on; adding a new platform needs zero schema change.
+CREATE TABLE IF NOT EXISTS identities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  channel TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE(channel, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_identities_lookup ON identities(channel, external_id);
 
 CREATE TABLE IF NOT EXISTS config (
   user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
