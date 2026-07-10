@@ -46,4 +46,20 @@ describe('telegram adapter', () => {
     expect(f.calls.sendChatAction.length).toBe(2);
     vi.useRealTimers();
   });
+
+  it('double start() does not leak a second interval', () => {
+    vi.useFakeTimers();
+    const f = fakeBot();
+    const adapter = createTelegramAdapter({ token: 'x', makeBot: () => f.bot as any });
+    const t = adapter.typingFor('7');
+    t.start();
+    t.start(); // guarded: must be a no-op, not a second immediate send / second interval
+    expect(f.calls.sendChatAction).toEqual([['7', 'typing']]);
+    vi.advanceTimersByTime(4000);
+    expect(f.calls.sendChatAction.length).toBe(2); // one interval, not two
+    t.stop();
+    vi.advanceTimersByTime(8000);
+    expect(f.calls.sendChatAction.length).toBe(2); // stop cleared the single interval
+    vi.useRealTimers();
+  });
 });
