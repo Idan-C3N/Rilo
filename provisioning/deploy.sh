@@ -12,8 +12,7 @@ rsync -az --delete \
 ssh "${REMOTE}" bash -s <<'EOF'
 set -euo pipefail
 cd /opt/personal-agent
-npm ci --omit=dev || npm install --omit=dev
-npm install tsx           # runtime TS execution
+npm ci --omit=dev || npm install --omit=dev   # tsx is a runtime dependency, pinned via package-lock
 cp provisioning/personal-agent.service /etc/systemd/system/personal-agent.service
 chown -R agent:agent /opt/personal-agent
 systemctl daemon-reload
