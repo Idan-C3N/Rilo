@@ -15,6 +15,7 @@
 - Every DB query is **scoped by `user_id`**. No cross-user reads.
 - **Secrets encrypted at rest**: OpenRouter keys + MCP creds. Encryption key from env var `ENC_KEY` (32-byte, base64). Plaintext secrets never written to SQLite.
 - **Allowlist gate** before any LLM call: unknown Telegram IDs get a fixed "not authorized" reply and never reach a model.
+- **Identity resolution is by `(channel, external_id)`** via the `identities` table — the seam for future non-Telegram channels.
 - **Models via OpenRouter only** at launch. Model ids are OpenRouter strings, e.g. `anthropic/claude-3.5-sonnet`, `anthropic/claude-3.5-haiku`.
 - Each user has a **cheap model** (routine turns + heartbeat gate + summarization) and a **strong model** (escalated turns).
 - **Telegram via long polling** (outbound only). No public inbound at launch.
@@ -35,7 +36,7 @@ src/
   db/
     db.ts                    # open sqlite, run migrations
     schema.sql               # table DDL
-    users.ts                 # users repo + allowlist
+    users.ts                 # users + identities repo + allowlist
     config.ts                # per-user model/key config repo
     messages.ts              # conversation history repo
     jobs.ts                  # scheduled jobs repo
@@ -355,8 +356,6 @@ git commit -m "feat: secret encryption via libsodium secretbox"
 ```sql
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  telegram_id TEXT UNIQUE,
-  phone TEXT,
   name TEXT,
   tz TEXT NOT NULL DEFAULT 'UTC',
   quiet_start INTEGER NOT NULL DEFAULT 22,   -- hour 0-23 local
@@ -365,6 +364,16 @@ CREATE TABLE IF NOT EXISTS users (
   allowlisted INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS identities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  channel TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE(channel, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_identities_lookup ON identities(channel, external_id);
 
 CREATE TABLE IF NOT EXISTS config (
   user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -444,7 +453,7 @@ describe('openDb', () => {
     const tables = db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table'"
     ).all().map((r: any) => r.name);
-    for (const t of ['users', 'config', 'messages', 'jobs', 'memory', 'mcp_servers', 'sessions', 'summaries']) {
+    for (const t of ['users', 'identities', 'config', 'messages', 'jobs', 'memory', 'mcp_servers', 'sessions', 'summaries']) {
       expect(tables).toContain(t);
     }
   });
@@ -502,37 +511,67 @@ git commit -m "feat: sqlite schema + openDb"
 
 **Interfaces:**
 - Consumes: `DB` from `db.ts`.
-- Produces: `User` type `{ id, telegram_id, name, tz, quiet_start, quiet_end, heartbeat_interval_min, allowlisted }`; `getUserByTelegramId(db, tgId): User | undefined`; `createUser(db, { telegram_id, name, heartbeat_interval_min }): User` (created not allowlisted; also inserts default `config` row); `isAllowlisted(db, tgId): boolean`; `setAllowlisted(db, userId, on): void`; `listUsers(db): User[]`; `listAllowlisted(db): User[]`.
+- Produces: `User` type `{ id, name, tz, quiet_start, quiet_end, heartbeat_interval_min, allowlisted }` (no per-channel columns — identity lives in `identities`).
+  `createUser(db, { name?, heartbeat_interval_min }): User` — inserts a `users` row (not allowlisted) + default `config` row; no identity.
+  `linkIdentity(db, userId, channel, externalId): number` — inserts an `identities` row, returns its id.
+  `createUserWithIdentity(db, { channel, externalId, name?, heartbeat_interval_min }): User` — `createUser` then `linkIdentity`.
+  `getUserByIdentity(db, channel, externalId): User | undefined` — joins `identities` → `users`.
+  `getExternalId(db, userId, channel): string | undefined`.
+  `getUserById(db, id): User | undefined`.
+  `isAllowlisted(db, userId): boolean` (by user id); `setAllowlisted(db, userId, on): void`; `listUsers(db): User[]`; `listAllowlisted(db): User[]`.
 
 - [ ] **Step 1: Write the failing test** — `tests/db/users.test.ts`
 
 ```typescript
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser, getUserByTelegramId, isAllowlisted, setAllowlisted } from '../../src/db/users.js';
+import {
+  createUser,
+  createUserWithIdentity,
+  linkIdentity,
+  getUserByIdentity,
+  getExternalId,
+  isAllowlisted,
+  setAllowlisted,
+} from '../../src/db/users.js';
 
 let db: DB;
 beforeEach(() => { db = openDb(':memory:'); });
 
 describe('users repo', () => {
-  it('creates a user, not allowlisted by default, with a config row', () => {
-    const u = createUser(db, { telegram_id: '123', name: 'Ann', heartbeat_interval_min: 30 });
+  it('round-trips createUserWithIdentity via getUserByIdentity', () => {
+    const u = createUserWithIdentity(db, { channel: 'telegram', externalId: '123', name: 'Ann', heartbeat_interval_min: 30 });
     expect(u.id).toBeGreaterThan(0);
-    expect(isAllowlisted(db, '123')).toBe(false);
+    expect(getUserByIdentity(db, 'telegram', '123')?.name).toBe('Ann');
+  });
+
+  it('creates a user not allowlisted by default, with a config row', () => {
+    const u = createUser(db, { name: 'Ann', heartbeat_interval_min: 30 });
+    expect(isAllowlisted(db, u.id)).toBe(false);
     const cfg = db.prepare('SELECT * FROM config WHERE user_id=?').get(u.id) as any;
     expect(cfg.cheap_model).toContain('haiku');
   });
 
-  it('allowlists a user', () => {
-    const u = createUser(db, { telegram_id: '9', name: 'B', heartbeat_interval_min: 30 });
+  it('allowlists a user by id', () => {
+    const u = createUserWithIdentity(db, { channel: 'telegram', externalId: '9', name: 'B', heartbeat_interval_min: 30 });
     setAllowlisted(db, u.id, true);
-    expect(isAllowlisted(db, '9')).toBe(true);
+    expect(isAllowlisted(db, u.id)).toBe(true);
   });
 
-  it('finds by telegram id', () => {
-    createUser(db, { telegram_id: 'tg', name: 'C', heartbeat_interval_min: 15 });
-    expect(getUserByTelegramId(db, 'tg')?.name).toBe('C');
-    expect(getUserByTelegramId(db, 'nope')).toBeUndefined();
+  it('getUserByIdentity is undefined for an unknown identity', () => {
+    expect(getUserByIdentity(db, 'telegram', 'nope')).toBeUndefined();
+  });
+
+  it('getExternalId returns the linked id, undefined for another channel', () => {
+    const u = createUserWithIdentity(db, { channel: 'telegram', externalId: 'tg', name: 'C', heartbeat_interval_min: 15 });
+    expect(getExternalId(db, u.id, 'telegram')).toBe('tg');
+    expect(getExternalId(db, u.id, 'whatsapp')).toBeUndefined();
+  });
+
+  it('linkIdentity attaches an additional channel to an existing user', () => {
+    const u = createUser(db, { name: 'D', heartbeat_interval_min: 30 });
+    linkIdentity(db, u.id, 'telegram', 'tg2');
+    expect(getUserByIdentity(db, 'telegram', 'tg2')?.id).toBe(u.id);
   });
 });
 ```
@@ -549,7 +588,6 @@ import type { DB } from './db.js';
 
 export interface User {
   id: number;
-  telegram_id: string | null;
   name: string | null;
   tz: string;
   quiet_start: number;
@@ -558,26 +596,57 @@ export interface User {
   allowlisted: number;
 }
 
-export function getUserByTelegramId(db: DB, tgId: string): User | undefined {
-  return db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(tgId) as User | undefined;
-}
-
 export function createUser(
   db: DB,
-  opts: { telegram_id: string; name?: string; heartbeat_interval_min: number },
+  opts: { name?: string; heartbeat_interval_min: number },
 ): User {
   const info = db
-    .prepare(
-      'INSERT INTO users (telegram_id, name, heartbeat_interval_min, created_at) VALUES (?, ?, ?, ?)',
-    )
-    .run(opts.telegram_id, opts.name ?? null, opts.heartbeat_interval_min, nowMs());
+    .prepare('INSERT INTO users (name, heartbeat_interval_min, created_at) VALUES (?, ?, ?)')
+    .run(opts.name ?? null, opts.heartbeat_interval_min, Date.now());
   const userId = Number(info.lastInsertRowid);
   db.prepare('INSERT INTO config (user_id) VALUES (?)').run(userId);
   return db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User;
 }
 
-export function isAllowlisted(db: DB, tgId: string): boolean {
-  const row = db.prepare('SELECT allowlisted FROM users WHERE telegram_id = ?').get(tgId) as
+export function linkIdentity(db: DB, userId: number, channel: string, externalId: string): number {
+  const info = db
+    .prepare('INSERT INTO identities (user_id, channel, external_id, created_at) VALUES (?, ?, ?, ?)')
+    .run(userId, channel, externalId, Date.now());
+  return Number(info.lastInsertRowid);
+}
+
+export function createUserWithIdentity(
+  db: DB,
+  opts: { channel: string; externalId: string; name?: string; heartbeat_interval_min: number },
+): User {
+  const user = createUser(db, { name: opts.name, heartbeat_interval_min: opts.heartbeat_interval_min });
+  linkIdentity(db, user.id, opts.channel, opts.externalId);
+  return user;
+}
+
+export function getUserByIdentity(db: DB, channel: string, externalId: string): User | undefined {
+  return db
+    .prepare(
+      `SELECT users.* FROM users
+       JOIN identities ON identities.user_id = users.id
+       WHERE identities.channel = ? AND identities.external_id = ?`,
+    )
+    .get(channel, externalId) as User | undefined;
+}
+
+export function getExternalId(db: DB, userId: number, channel: string): string | undefined {
+  const row = db
+    .prepare('SELECT external_id FROM identities WHERE user_id = ? AND channel = ?')
+    .get(userId, channel) as { external_id: string } | undefined;
+  return row?.external_id;
+}
+
+export function getUserById(db: DB, id: number): User | undefined {
+  return db.prepare('SELECT * FROM users WHERE id = ?').get(id) as User | undefined;
+}
+
+export function isAllowlisted(db: DB, userId: number): boolean {
+  const row = db.prepare('SELECT allowlisted FROM users WHERE id = ?').get(userId) as
     | { allowlisted: number }
     | undefined;
   return !!row && row.allowlisted === 1;
@@ -594,22 +663,18 @@ export function listUsers(db: DB): User[] {
 export function listAllowlisted(db: DB): User[] {
   return db.prepare('SELECT * FROM users WHERE allowlisted = 1').all() as User[];
 }
-
-function nowMs(): number {
-  return Date.now();
-}
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/db/users.test.ts`
-Expected: PASS (3 tests).
+Expected: PASS (6 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/db/users.ts tests/db/users.test.ts
-git commit -m "feat: users repo + allowlist"
+git commit -m "feat: users + identities repo, allowlist by user id"
 ```
 
 ---
@@ -630,7 +695,7 @@ git commit -m "feat: users repo + allowlist"
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { getConfig, setModels, setOpenrouterKey, getOpenrouterKey } from '../../src/db/config.js';
 
@@ -641,7 +706,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
 });
 
 describe('config repo', () => {
@@ -758,13 +823,13 @@ git commit -m "feat: per-user config repo with encrypted openrouter key"
 ```typescript
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { addMessage, recentMessages, messagesSince } from '../../src/db/messages.js';
 
 let db: DB, uid: number;
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
 });
 
 describe('messages repo', () => {
@@ -852,7 +917,7 @@ git commit -m "feat: messages repo"
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { setOpenrouterKey } from '../../src/db/config.js';
 import { resolveModels } from '../../src/agent/models.js';
@@ -865,7 +930,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
 });
 
 describe('resolveModels', () => {
@@ -949,7 +1014,7 @@ git commit -m "feat: per-user OpenRouter model resolver"
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { setOpenrouterKey } from '../../src/db/config.js';
 import { recentMessages } from '../../src/db/messages.js';
@@ -962,7 +1027,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
   setOpenrouterKey(db, uid, 'sk-or-test');
 });
 
@@ -1077,13 +1142,14 @@ git commit -m "feat: agent core reactive turn with injectable generate"
 - Test: `tests/channels/telegram.test.ts`
 
 **Interfaces:**
-- Produces (`adapter.ts`): `interface InboundMessage { channelUserId: string; text: string; name?: string }`; `interface ChannelAdapter { start(): void; stop(): Promise<void>; send(channelUserId: string, text: string): Promise<void>; onMessage(handler: (m: InboundMessage) => Promise<void>): void; }`; `interface TypingController { start(): void; stop(): void }`.
-- Produces (`telegram.ts`): `createTelegramAdapter(deps): ChannelAdapter & { typingFor(channelUserId): TypingController }` where `deps = { token: string; makeBot?: (token) => BotLike }`. `BotLike` is a minimal interface over grammY so tests inject a fake: `{ on(event, cb): void; start(): void; stop(): Promise<void>; api: { sendMessage(chatId, text): Promise<unknown>; sendChatAction(chatId, action): Promise<unknown> } }`. Typing controller calls `sendChatAction(chatId, 'typing')` immediately then every 4000ms until `stop()`.
+- Produces (`adapter.ts`): `interface InboundMessage { channel: string; channelUserId: string; text: string; name?: string }`; `interface ChannelAdapter { readonly channel: string; start(): void; stop(): Promise<void>; send(channelUserId: string, text: string): Promise<void>; onMessage(handler: (m: InboundMessage) => Promise<void>): void; }`; `interface TypingController { start(): void; stop(): void }`.
+- Produces (`telegram.ts`): `createTelegramAdapter(deps): ChannelAdapter & { typingFor(channelUserId): TypingController }` where `deps = { token: string; makeBot?: (token) => BotLike }`. `BotLike` is a minimal interface over grammY so tests inject a fake: `{ on(event, cb): void; start(): void; stop(): Promise<void>; api: { sendMessage(chatId, text): Promise<unknown>; sendChatAction(chatId, action): Promise<unknown> } }`. The returned adapter exposes `channel: 'telegram'` and stamps `channel: 'telegram'` on every emitted `InboundMessage`. Typing controller calls `sendChatAction(chatId, 'typing')` immediately then every 4000ms until `stop()`.
 
 - [ ] **Step 1: Implement `src/channels/adapter.ts`** (no test — pure types/interface)
 
 ```typescript
 export interface InboundMessage {
+  channel: string;
   channelUserId: string;
   text: string;
   name?: string;
@@ -1095,6 +1161,7 @@ export interface TypingController {
 }
 
 export interface ChannelAdapter {
+  readonly channel: string;
   start(): void;
   stop(): Promise<void>;
   send(channelUserId: string, text: string): Promise<void>;
@@ -1134,7 +1201,7 @@ describe('telegram adapter', () => {
     adapter.onMessage(async (m) => { received.push(m); });
     adapter.start();
     await f.fire({ from: { id: 42, first_name: 'Ann' }, message: { text: 'hi' } });
-    expect(received[0]).toEqual({ channelUserId: '42', text: 'hi', name: 'Ann' });
+    expect(received[0]).toEqual({ channel: 'telegram', channelUserId: '42', text: 'hi', name: 'Ann' });
     await adapter.send('42', 'yo');
     expect(f.calls.sendMessage).toEqual([['42', 'yo']]);
   });
@@ -1193,6 +1260,7 @@ export function createTelegramAdapter(
   bot.on('message:text', async (ctx: any) => {
     if (!handler) return;
     await handler({
+      channel: 'telegram',
       channelUserId: String(ctx.from.id),
       text: ctx.message.text,
       name: ctx.from.first_name,
@@ -1200,6 +1268,7 @@ export function createTelegramAdapter(
   });
 
   return {
+    channel: 'telegram',
     start: () => bot.start(),
     stop: () => bot.stop(),
     onMessage: (h) => { handler = h; },
@@ -1258,7 +1327,7 @@ git commit -m "feat: channel adapter interface + telegram (polling, typing)"
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser, setAllowlisted, getUserByTelegramId } from '../../src/db/users.js';
+import { createUserWithIdentity, setAllowlisted, getUserByIdentity } from '../../src/db/users.js';
 import { setOpenrouterKey } from '../../src/db/config.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { handleInbound, NOT_AUTHORIZED } from '../../src/agent/dispatch.js';
@@ -1284,17 +1353,17 @@ beforeEach(() => { db = openDb(':memory:'); sent.length = 0; typingEvents.length
 
 describe('handleInbound', () => {
   it('rejects non-allowlisted users without calling the model', async () => {
-    await handleInbound(deps(), { channelUserId: '5', text: 'hi', name: 'X' });
+    await handleInbound(deps(), { channel: 'telegram', channelUserId: '5', text: 'hi', name: 'X' });
     expect(sent).toEqual([['5', NOT_AUTHORIZED]]);
     // user auto-created but not allowlisted
-    expect(getUserByTelegramId(db, '5')?.allowlisted).toBe(0);
+    expect(getUserByIdentity(db, 'telegram', '5')?.allowlisted).toBe(0);
   });
 
   it('runs a turn for an allowlisted user with typing lifecycle', async () => {
-    const u = createUser(db, { telegram_id: '9', heartbeat_interval_min: 30 });
+    const u = createUserWithIdentity(db, { channel: 'telegram', externalId: '9', heartbeat_interval_min: 30 });
     setAllowlisted(db, u.id, true);
     setOpenrouterKey(db, u.id, 'sk-or');
-    await handleInbound(deps(), { channelUserId: '9', text: 'hi', name: 'Y' });
+    await handleInbound(deps(), { channel: 'telegram', channelUserId: '9', text: 'hi', name: 'Y' });
     expect(sent).toEqual([['9', 'reply!']]);
     expect(typingEvents).toEqual(['start', 'stop']);
   });
@@ -1312,7 +1381,7 @@ Expected: FAIL — module not found.
 import type { DB } from '../db/db.js';
 import type { AppConfig } from '../config.js';
 import type { InboundMessage, ChannelAdapter, TypingController } from '../channels/adapter.js';
-import { getUserByTelegramId, createUser, isAllowlisted } from '../db/users.js';
+import { getUserByIdentity, createUserWithIdentity, isAllowlisted } from '../db/users.js';
 import type { runAgentTurn, GenerateFn } from './core.js';
 
 export const NOT_AUTHORIZED =
@@ -1330,15 +1399,16 @@ export interface DispatchDeps {
 
 export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Promise<void> {
   const { db } = deps;
-  let user = getUserByTelegramId(db, m.channelUserId);
+  let user = getUserByIdentity(db, m.channel, m.channelUserId);
   if (!user) {
-    user = createUser(db, {
-      telegram_id: m.channelUserId,
+    user = createUserWithIdentity(db, {
+      channel: m.channel,
+      externalId: m.channelUserId,
       name: m.name,
       heartbeat_interval_min: deps.heartbeatDefaultMin,
     });
   }
-  if (!isAllowlisted(db, m.channelUserId)) {
+  if (!isAllowlisted(db, user.id)) {
     await deps.adapter.send(m.channelUserId, NOT_AUTHORIZED);
     return;
   }
@@ -1398,7 +1468,7 @@ adapter.onMessage((m) =>
   ),
 );
 
-startScheduler({ db, appCfg, adapter, generate });
+startScheduler({ db, appCfg, adapter, generate, channel: adapter.channel });
 await startWeb({ db, appCfg, adapter });
 adapter.start();
 console.log('personal-agent running');
@@ -1451,13 +1521,13 @@ Deliverable: user says "remind me in 10 minutes to X"; a job persists; the sched
 ```typescript
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { addJob, dueJobs, markDone, cancelJob, pendingJobsByType } from '../../src/db/jobs.js';
 
 let db: DB, uid: number;
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
 });
 
 describe('jobs repo', () => {
@@ -1587,14 +1657,14 @@ Design note: `delay_minutes` keeps the tool deterministic + unit-testable. The m
 ```typescript
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { openDb, type DB } from '../../../src/db/db.js';
-import { createUser } from '../../../src/db/users.js';
+import { createUserWithIdentity } from '../../../src/db/users.js';
 import { pendingJobsByType } from '../../../src/db/jobs.js';
 import { makeRemindTool } from '../../../src/agent/tools/remind.js';
 
 let db: DB, uid: number;
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
 });
 
 describe('remind tool', () => {
@@ -1678,22 +1748,22 @@ git commit -m "feat: remind tool + tool assembly"
 - Test: `tests/scheduler/scheduler.test.ts`
 
 **Interfaces:**
-- Consumes: `dueJobs`, `markDone` from `db/jobs.ts`; `getUserByTelegramId`/user lookup; `ChannelAdapter.send`; `GenerateFn`.
-- Produces: `tick(deps, now): Promise<void>` (processes all due jobs once — the unit-testable core) and `startScheduler(deps): { stop(): void }` (calls `tick` every 15s via `setInterval`). `deps = { db; appCfg; adapter: Pick<ChannelAdapter,'send'>; generate: GenerateFn; fireReminder?; fireHeartbeat? }`. `tick` dispatches by job type: `reminder`/`followup` → `fireReminder` (Task 14), `heartbeat` → `fireHeartbeat` (Task 19). Each job wrapped in try/catch so one failure doesn't stop the loop; always `markDone` on success. Needs the user's `telegram_id` to send — look it up by `user_id`.
+- Consumes: `dueJobs`, `markDone` from `db/jobs.ts`; `getExternalId`/user lookup; `ChannelAdapter.send`; `GenerateFn`.
+- Produces: `tick(deps, now): Promise<void>` (processes all due jobs once — the unit-testable core) and `startScheduler(deps): { stop(): void }` (calls `tick` every 15s via `setInterval`). `deps = { db; appCfg; adapter: Pick<ChannelAdapter,'send'>; generate: GenerateFn; channel: string; fireReminder?; fireHeartbeat? }`. `tick` dispatches by job type: `reminder`/`followup` → `fireReminder` (Task 14), `heartbeat` → `fireHeartbeat` (Task 19). Each job wrapped in try/catch so one failure doesn't stop the loop; always `markDone` on success. Sending requires the user's external id for `deps.channel` — resolved via `getExternalId(db, user.id, deps.channel)` inside `fireReminder`/`fireHeartbeat`.
 
 - [ ] **Step 1: Write the failing test** — `tests/scheduler/scheduler.test.ts`
 
 ```typescript
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { addJob, dueJobs } from '../../src/db/jobs.js';
 import { tick } from '../../src/scheduler/scheduler.js';
 
 let db: DB, uid: number;
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 'tg99', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 'tg99', heartbeat_interval_min: 30 }).id;
 });
 
 function deps(overrides: any = {}) {
@@ -1704,6 +1774,7 @@ function deps(overrides: any = {}) {
       db, appCfg: {} as any,
       adapter: { send: async () => {} },
       generate: async () => ({ text: 'x' }),
+      channel: 'telegram',
       fireReminder: async (_d: any, job: any) => { fired.push(['reminder', job.id]); },
       fireHeartbeat: async (_d: any, job: any) => { fired.push(['heartbeat', job.id]); },
       ...overrides,
@@ -1763,6 +1834,7 @@ export interface SchedulerDeps {
   appCfg: Pick<AppConfig, 'openrouterKeyFallback'>;
   adapter: Pick<ChannelAdapter, 'send'>;
   generate: GenerateFn;
+  channel: string;
   fireReminder: (deps: SchedulerDeps, job: Job) => Promise<void>;
   fireHeartbeat: (deps: SchedulerDeps, job: Job) => Promise<void>;
 }
@@ -1814,24 +1886,18 @@ git commit -m "feat: scheduler tick + poll loop with per-job isolation"
 - Test: `tests/scheduler/fire.test.ts`
 
 **Interfaces:**
-- Consumes: `SchedulerDeps`, `Job`, `resolveModels`, `getUserByTelegramId`-style lookup by id, `addMessage`, `ChannelAdapter.send`, `GenerateFn`.
-- Produces: `fireReminder(deps, job): Promise<void>` — loads the user (by `job.user_id`), runs a **mini agent turn** on the cheap model to phrase the reminder naturally from `job.payload.text`, persists the assistant message, and sends it via the adapter to the user's `telegram_id`. Export a `getUserById(db, id): User | undefined` helper (add to `db/users.ts`).
+- Consumes: `SchedulerDeps`, `Job`, `resolveModels`, `getUserById`/`getExternalId` lookups, `addMessage`, `ChannelAdapter.send`, `GenerateFn`.
+- Produces: `fireReminder(deps, job): Promise<void>` — loads the user (by `job.user_id`), resolves their external id for `deps.channel` (skips silently if unlinked), runs a **mini agent turn** on the cheap model to phrase the reminder naturally from `job.payload.text`, persists the assistant message, and sends it via the adapter to that external id.
 
-- [ ] **Step 1: Add `getUserById` to `src/db/users.ts`**
+Note: `getUserById` already exists on `db/users.ts` from Task 4 — do not re-add it.
 
-```typescript
-export function getUserById(db: DB, id: number): User | undefined {
-  return db.prepare('SELECT * FROM users WHERE id = ?').get(id) as User | undefined;
-}
-```
-
-- [ ] **Step 2: Write the failing test** — `tests/scheduler/fire.test.ts`
+- [ ] **Step 1: Write the failing test** — `tests/scheduler/fire.test.ts`
 
 ```typescript
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { setOpenrouterKey } from '../../src/db/config.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { recentMessages } from '../../src/db/messages.js';
@@ -1845,7 +1911,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 'chat55', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 'chat55', heartbeat_interval_min: 30 }).id;
   setOpenrouterKey(db, uid, 'sk-or');
   sent.length = 0;
 });
@@ -1853,7 +1919,7 @@ beforeEach(() => {
 describe('fireReminder', () => {
   it('phrases via cheap model and sends to the user chat', async () => {
     const deps: any = {
-      db, appCfg: {},
+      db, appCfg: {}, channel: 'telegram',
       adapter: { send: async (id: string, text: string) => { sent.push([id, text]); } },
       generate: async (args: any) => {
         expect(JSON.stringify(args.messages)).toContain('buy milk');
@@ -1867,17 +1933,17 @@ describe('fireReminder', () => {
 });
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/scheduler/fire.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 4: Implement `src/scheduler/fire.ts`**
+- [ ] **Step 3: Implement `src/scheduler/fire.ts`**
 
 ```typescript
 import type { Job } from '../db/jobs.js';
 import type { SchedulerDeps } from './scheduler.js';
-import { getUserById } from '../db/users.js';
+import { getUserById, getExternalId } from '../db/users.js';
 import { resolveModels } from '../agent/models.js';
 import { addMessage } from '../db/messages.js';
 
@@ -1886,7 +1952,9 @@ const REMINDER_SYSTEM =
 
 export async function fireReminder(deps: SchedulerDeps, job: Job): Promise<void> {
   const user = getUserById(deps.db, job.user_id);
-  if (!user || !user.telegram_id) return;
+  if (!user) return;
+  const ext = getExternalId(deps.db, user.id, deps.channel);
+  if (!ext) return;
   const text = String(job.payload.text ?? 'your reminder');
   const models = resolveModels(deps.db, deps.appCfg, user.id);
   const result = await deps.generate({
@@ -1895,16 +1963,16 @@ export async function fireReminder(deps: SchedulerDeps, job: Job): Promise<void>
     messages: [{ role: 'user', content: `Deliver this reminder to the user: "${text}"` }],
   });
   addMessage(deps.db, user.id, 'assistant', result.text);
-  await deps.adapter.send(user.telegram_id, result.text);
+  await deps.adapter.send(ext, result.text);
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/scheduler/fire.test.ts`
 Expected: PASS.
 
-- [ ] **Step 6: Wire `fireReminder` into the scheduler in `src/index.ts`**
+- [ ] **Step 5: Wire `fireReminder` into the scheduler in `src/index.ts`**
 
 Update the `startScheduler` call:
 
@@ -1913,15 +1981,15 @@ import { startScheduler } from './scheduler/scheduler.js';
 import { fireReminder } from './scheduler/fire.js';
 import { fireHeartbeat } from './scheduler/heartbeat.js'; // Task 19
 // ...
-startScheduler({ db, appCfg, adapter, generate, fireReminder, fireHeartbeat });
+startScheduler({ db, appCfg, adapter, generate, channel: adapter.channel, fireReminder, fireHeartbeat });
 ```
 
 (Until Task 19, pass a temporary `fireHeartbeat: async () => {}` stub.)
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/db/users.ts src/scheduler/fire.ts tests/scheduler/fire.test.ts src/index.ts
+git add src/scheduler/fire.ts tests/scheduler/fire.test.ts src/index.ts
 git commit -m "feat: fire reminders via mini agent turn"
 ```
 
@@ -1946,13 +2014,13 @@ Deliverable: agent remembers facts; can track a task and follow up; long histori
 ```typescript
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { remember, recall, forget } from '../../src/db/memory.js';
 
 let db: DB, uid: number;
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
 });
 
 describe('memory repo', () => {
@@ -2050,14 +2118,14 @@ git commit -m "feat: memory repo"
 ```typescript
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openDb, type DB } from '../../../src/db/db.js';
-import { createUser } from '../../../src/db/users.js';
+import { createUserWithIdentity } from '../../../src/db/users.js';
 import { recall } from '../../../src/db/memory.js';
 import { makeRememberTool, makeRecallTool } from '../../../src/agent/tools/memory.js';
 
 let db: DB, uid: number;
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
 });
 
 describe('memory tools', () => {
@@ -2078,7 +2146,7 @@ describe('memory tools', () => {
 ```typescript
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { openDb, type DB } from '../../../src/db/db.js';
-import { createUser } from '../../../src/db/users.js';
+import { createUserWithIdentity } from '../../../src/db/users.js';
 import { pendingJobsByType } from '../../../src/db/jobs.js';
 import { recall } from '../../../src/db/memory.js';
 import { makeTrackTool } from '../../../src/agent/tools/track.js';
@@ -2086,7 +2154,7 @@ import { makeTrackTool } from '../../../src/agent/tools/track.js';
 let db: DB, uid: number;
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
 });
 
 describe('track tool', () => {
@@ -2245,7 +2313,7 @@ Design note: for MVP, `runAgentTurn` keeps using `recentMessages` (Task 8). This
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { setOpenrouterKey } from '../../src/db/config.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { addMessage } from '../../src/db/messages.js';
@@ -2258,7 +2326,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
   setOpenrouterKey(db, uid, 'sk-or');
 });
 
@@ -2467,7 +2535,7 @@ git commit -m "feat: quiet-hours helper (tz-aware, wrap-around)"
 - Test: `tests/scheduler/heartbeat.test.ts`
 
 **Interfaces:**
-- Consumes: `SchedulerDeps`, `Job`, `getUserById`, `resolveModels`, `buildContext`, `recall`, `isQuiet`, `addJob`, `addMessage`, `GenerateFn` (with structured decision).
+- Consumes: `SchedulerDeps`, `Job`, `getUserById`, `getExternalId`, `resolveModels`, `buildContext`, `recall`, `isQuiet`, `addJob`, `addMessage`, `GenerateFn` (with structured decision).
 - Produces:
   - `fireHeartbeat(deps, job): Promise<void>` — the heartbeat tick body. Steps: (1) reschedule the next heartbeat job (`addJob type=heartbeat fireAt=now+interval`). (2) If `isQuiet` → return (silent). (3) Build gate input from memory + recent context + current time; ask the **cheap model** via `deps.decideHeartbeat` returning `{ act: boolean; message?: string }`. (4) If `act && message` → persist + send to the user. Escalation to the strong model for composing a richer message is done inside `decideHeartbeat` when `act` is true.
   - `decideHeartbeat(deps, userId): Promise<{ act: boolean; message?: string }>` — default impl uses `generateObject`-style structured output; injectable for tests.
@@ -2479,7 +2547,7 @@ git commit -m "feat: quiet-hours helper (tz-aware, wrap-around)"
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser, setAllowlisted } from '../../src/db/users.js';
+import { createUserWithIdentity, setAllowlisted } from '../../src/db/users.js';
 import { setOpenrouterKey } from '../../src/db/config.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { pendingHeartbeat } from '../../src/db/jobs.js';
@@ -2494,7 +2562,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   db = openDb(':memory:');
-  const u = createUser(db, { telegram_id: 'hb1', heartbeat_interval_min: 30 });
+  const u = createUserWithIdentity(db, { channel: 'telegram', externalId: 'hb1', heartbeat_interval_min: 30 });
   uid = u.id;
   setAllowlisted(db, uid, true);
   setOpenrouterKey(db, uid, 'sk-or');
@@ -2505,7 +2573,7 @@ beforeEach(() => {
 
 function deps(decision: any) {
   return {
-    db, appCfg: {} as any,
+    db, appCfg: {} as any, channel: 'telegram',
     adapter: { send: async (id: string, t: string) => { sent.push([id, t]); } },
     generate: async () => ({ text: '' }),
     decideHeartbeat: async () => decision,
@@ -2560,7 +2628,7 @@ import type { Job } from '../db/jobs.js';
 import type { SchedulerDeps } from './scheduler.js';
 import type { DB } from '../db/db.js';
 import type { AppConfig } from '../config.js';
-import { getUserById, listAllowlisted } from '../db/users.js';
+import { getUserById, getExternalId, listAllowlisted } from '../db/users.js';
 import { addJob, pendingHeartbeat } from '../db/jobs.js';
 import { addMessage } from '../db/messages.js';
 import { recall } from '../db/memory.js';
@@ -2594,7 +2662,9 @@ export async function decideHeartbeat(
 
 export async function fireHeartbeat(deps: HeartbeatDeps, job: Job): Promise<void> {
   const user = getUserById(deps.db, job.user_id);
-  if (!user || !user.telegram_id) return;
+  if (!user) return;
+  const ext = getExternalId(deps.db, user.id, deps.channel);
+  if (!ext) return;
 
   // 1. Always reschedule next tick first.
   addJob(deps.db, {
@@ -2614,7 +2684,7 @@ export async function fireHeartbeat(deps: HeartbeatDeps, job: Job): Promise<void
   // 4. Act.
   if (decision.act && decision.message) {
     addMessage(deps.db, user.id, 'assistant', decision.message);
-    await deps.adapter.send(user.telegram_id, decision.message);
+    await deps.adapter.send(ext, decision.message);
   }
 }
 
@@ -2670,7 +2740,7 @@ Deliverable: a user can register an MCP server; its tools appear in the agent's 
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { addMcpServer, listMcpServers, listEnabledMcpServers, setMcpEnabled, deleteMcpServer } from '../../src/db/mcp.js';
 
@@ -2681,7 +2751,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
 });
 
 describe('mcp repo', () => {
@@ -2826,7 +2896,7 @@ git commit -m "feat: mcp_servers repo with encrypted creds"
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { addMcpServer } from '../../src/db/mcp.js';
 import { assembleMcpTools } from '../../src/mcp/manager.js';
@@ -2838,7 +2908,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
 });
 
 describe('assembleMcpTools', () => {
@@ -2968,13 +3038,13 @@ git commit -m "feat: per-user MCP tool assembly with graceful degradation"
 ```typescript
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openDb, type DB } from '../../../src/db/db.js';
-import { createUser } from '../../../src/db/users.js';
+import { createUserWithIdentity } from '../../../src/db/users.js';
 import { buildToolsFor } from '../../../src/agent/tools/index.js';
 
 let db: DB, uid: number;
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
 });
 
 describe('buildToolsFor', () => {
@@ -3096,13 +3166,13 @@ Deliverable: `/login` in Telegram issues a code; entering it in the browser (rea
 ```typescript
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { startLogin, verifyCode, getSession } from '../../src/db/sessions.js';
 
 let db: DB, uid: number;
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
 });
 
 describe('sessions', () => {
@@ -3202,14 +3272,14 @@ Simpler MVP flow (chosen): the message contains a link `http://<host>:<port>/log
 ```typescript
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { startLogin } from '../../src/db/sessions.js';
 import { sessionUserId } from '../../src/web/auth.js';
 
 let db: DB, uid: number;
 beforeEach(() => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
 });
 
 describe('sessionUserId', () => {
@@ -3268,11 +3338,11 @@ Add `webBaseUrl: string` to `DispatchDeps` and `import { startLogin } from '../d
 
 ```typescript
 it('handles /login by sending a code + link, no model call', async () => {
-  const u = createUser(db, { telegram_id: '30', heartbeat_interval_min: 30 });
+  const u = createUserWithIdentity(db, { channel: 'telegram', externalId: '30', heartbeat_interval_min: 30 });
   setAllowlisted(db, u.id, true);
   let modelCalled = false;
   const d = { ...deps(), webBaseUrl: 'http://host:8080', generate: async () => { modelCalled = true; return { text: 'x' }; } };
-  await handleInbound(d as any, { channelUserId: '30', text: '/login', name: 'Z' });
+  await handleInbound(d as any, { channel: 'telegram', channelUserId: '30', text: '/login', name: 'Z' });
   expect(modelCalled).toBe(false);
   expect(sent[0][1]).toMatch(/http:\/\/host:8080\/login\?token=/);
   expect(sent[0][1]).toMatch(/\d{6}/);
@@ -3312,7 +3382,7 @@ git commit -m "feat: /login magic-code flow + session auth helper"
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { startLogin, verifyCode } from '../../src/db/sessions.js';
 import { getConfig } from '../../src/db/config.js';
@@ -3325,7 +3395,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
   const { token, code } = startLogin(db, uid);
   verifyCode(db, token, code);
   cookie = `token=${token}`;
@@ -3523,7 +3593,7 @@ git commit -m "feat: fastify web app, login page, models config screen"
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUser } from '../../src/db/users.js';
+import { createUserWithIdentity } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { startLogin, verifyCode } from '../../src/db/sessions.js';
 import { listMcpServers } from '../../src/db/mcp.js';
@@ -3536,7 +3606,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   db = openDb(':memory:');
-  uid = createUser(db, { telegram_id: 't', heartbeat_interval_min: 30 }).id;
+  uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
   const { token, code } = startLogin(db, uid);
   verifyCode(db, token, code);
   cookie = `token=${token}`;
@@ -3847,7 +3917,7 @@ git commit -m "feat: hetzner provisioning + deploy scripts + setup docs"
 - Telegram + typing indicator → Task 9; reactive path Task 10. ✅
 - Encryption at rest → Task 2; used in 5, 20. ✅
 - Magic-code UI login + firewall gate → Tasks 23, 24, 27. ✅
-- WhatsApp later → channel adapter interface (Task 9) leaves the seam. ✅ (not implemented, per decision)
+- WhatsApp later → channel adapter interface (Task 9) leaves the seam; the `identities` table (Task 3/4) is the multi-platform seam, keyed by `(channel, external_id)`. ✅ (not implemented, per decision)
 - Shared context later → not built; `user_id` scoping leaves room. ✅ (per decision)
 
 ## Post-Implementation
