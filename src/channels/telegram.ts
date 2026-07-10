@@ -1,4 +1,5 @@
 import { Bot } from 'grammy';
+import telegramifyMarkdown from 'telegramify-markdown';
 import type { ChannelAdapter, InboundMessage, TypingController } from './adapter.js';
 
 export interface BotLike {
@@ -7,7 +8,7 @@ export interface BotLike {
   start(): void;
   stop(): Promise<void>;
   api: {
-    sendMessage(chatId: string | number, text: string): Promise<unknown>;
+    sendMessage(chatId: string | number, text: string, other?: Record<string, unknown>): Promise<unknown>;
     sendChatAction(chatId: string | number, action: string): Promise<unknown>;
   };
 }
@@ -61,7 +62,16 @@ export function createTelegramAdapter(
     stop: () => bot.stop(),
     onMessage: (h) => { handler = h; },
     send: async (channelUserId, text) => {
-      await bot.api.sendMessage(channelUserId, text);
+      // LLM emits standard Markdown; Telegram needs MarkdownV2 with strict
+      // escaping. Convert, then send. On any parse failure fall back to plain
+      // so the message is never lost.
+      try {
+        const md = telegramifyMarkdown(text, 'escape');
+        await bot.api.sendMessage(channelUserId, md, { parse_mode: 'MarkdownV2' });
+      } catch (err) {
+        console.error(`markdown send failed for ${channelUserId}, sending plain:`, err);
+        await bot.api.sendMessage(channelUserId, text);
+      }
     },
     typingFor: (channelUserId): TypingController => {
       let timer: ReturnType<typeof setInterval> | null = null;

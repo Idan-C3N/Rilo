@@ -12,7 +12,7 @@ function fakeBot() {
       start: () => {},
       stop: async () => {},
       api: {
-        sendMessage: async (id: string, text: string) => { calls.sendMessage.push([id, text]); },
+        sendMessage: async (id: string, text: string, other?: any) => { calls.sendMessage.push([id, text, other]); },
         sendChatAction: async (id: string, a: string) => { calls.sendChatAction.push([id, a]); },
       },
     },
@@ -29,7 +29,21 @@ describe('telegram adapter', () => {
     await f.fire({ from: { id: 42, first_name: 'Ann' }, message: { text: 'hi' } });
     expect(received[0]).toEqual({ channel: 'telegram', channelUserId: '42', text: 'hi', name: 'Ann' });
     await adapter.send('42', 'yo');
-    expect(f.calls.sendMessage).toEqual([['42', 'yo']]);
+    const [id, text, other] = f.calls.sendMessage[0];
+    expect(id).toBe('42');
+    expect(text).toContain('yo');
+    expect(other).toEqual({ parse_mode: 'MarkdownV2' });
+  });
+
+  it('converts markdown bold to Telegram MarkdownV2', async () => {
+    const f = fakeBot();
+    const adapter = createTelegramAdapter({ token: 'x', makeBot: () => f.bot as any });
+    await adapter.send('42', 'a **message** here');
+    const [, text, other] = f.calls.sendMessage[0];
+    // MarkdownV2 bold is single-asterisk; standard '**' must be converted.
+    expect(text).toContain('*message*');
+    expect(text).not.toContain('**message**');
+    expect(other).toEqual({ parse_mode: 'MarkdownV2' });
   });
 
   it('typing controller sends typing immediately and repeats on interval', () => {
