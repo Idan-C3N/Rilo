@@ -38,11 +38,9 @@ export async function decideHeartbeat(
 
 export async function fireHeartbeat(deps: HeartbeatDeps, job: Job): Promise<void> {
   const user = getUserById(deps.db, job.user_id);
-  if (!user) return;
-  const ext = getExternalId(deps.db, user.id, deps.channel);
-  if (!ext) return;
+  if (!user) return; // user deleted — nothing to reschedule from
 
-  // 1. Always reschedule next tick first.
+  // 1. ALWAYS reschedule the next heartbeat first (before quiet/identity checks).
   addJob(deps.db, {
     userId: user.id,
     type: 'heartbeat',
@@ -50,14 +48,16 @@ export async function fireHeartbeat(deps: HeartbeatDeps, job: Job): Promise<void
     payload: {},
   });
 
-  // 2. Quiet hours → silent.
+  // 2. Quiet hours → silent (already rescheduled).
   if (isQuiet(user, Date.now())) return;
 
-  // 3. Gate decision.
+  // 3. Resolve delivery target; if none, skip messaging (already rescheduled).
+  const ext = getExternalId(deps.db, user.id, deps.channel);
+  if (!ext) return;
+
+  // 4. Gate decision + act.
   const decide = deps.decideHeartbeat ?? decideHeartbeat;
   const decision = await decide(deps, user.id);
-
-  // 4. Act.
   if (decision.act && decision.message) {
     addMessage(deps.db, user.id, 'assistant', decision.message);
     await deps.adapter.send(ext, decision.message);

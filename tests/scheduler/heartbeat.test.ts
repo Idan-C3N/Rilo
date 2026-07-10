@@ -65,4 +65,16 @@ describe('heartbeat', () => {
     seedHeartbeats(db, {} as any); // idempotent
     expect(db.prepare("SELECT COUNT(*) c FROM jobs WHERE type='heartbeat' AND status='pending'").get()).toEqual({ c: 1 });
   });
+
+  it('reschedules even when the user has no linked identity for the channel', async () => {
+    const depsNoIdentity = {
+      db, appCfg: {} as any, channel: 'whatsapp', // no identity for whatsapp
+      adapter: { send: async (id: string, t: string) => { sent.push([id, t]); } },
+      generate: async () => ({ text: '' }),
+      decideHeartbeat: async () => ({ act: true, message: 'should not send' }),
+    } as any;
+    await fireHeartbeat(depsNoIdentity, job());
+    expect(pendingHeartbeat(db, uid)).toBeDefined();
+    expect(sent).toEqual([]);
+  });
 });
