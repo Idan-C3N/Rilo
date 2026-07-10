@@ -43,15 +43,6 @@ export const MCP_PRESETS: McpPreset[] = [
     ],
   },
   {
-    id: 'fetch',
-    label: 'Web Fetch',
-    description: 'Fetch and read the contents of any URL. No key required.',
-    transport: 'stdio',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-fetch'],
-    secrets: [],
-  },
-  {
     id: 'custom-http',
     label: 'Custom hosted MCP (URL)',
     description: 'Connect any hosted MCP server by URL. Optional bearer token.',

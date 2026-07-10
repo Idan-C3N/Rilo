@@ -23,18 +23,18 @@ beforeEach(async () => {
 });
 
 describe('mcp preset catalog', () => {
-  it('one-click adds a no-secret preset (Web Fetch) with baked-in transport/command', async () => {
+  it('one-click adds the Slack preset with baked-in transport/command + pasted secrets', async () => {
     const res = await app.inject({
       method: 'POST', url: '/mcp/preset', headers: { cookie },
-      payload: { preset_id: 'fetch' },
+      payload: { preset_id: 'slack', SLACK_BOT_TOKEN: 'xoxb-abc', SLACK_TEAM_ID: 'T123' },
     });
     expect(res.statusCode).toBe(302);
     const s = listMcpServers(db, uid)[0]!;
-    expect(s.name).toBe('Web Fetch');
+    expect(s.name).toBe('Slack');
     expect(s.transport).toBe('stdio');
     expect(s.command).toBe('npx');
-    expect(s.args).toContain('@modelcontextprotocol/server-fetch');
-    expect(s.creds).toBeUndefined();
+    expect(s.args).toContain('@modelcontextprotocol/server-slack');
+    expect(s.creds).toEqual({ SLACK_BOT_TOKEN: 'xoxb-abc', SLACK_TEAM_ID: 'T123' });
   });
 
   it('custom-http preset maps __url to the server url and Authorization to creds', async () => {
@@ -63,7 +63,7 @@ describe('mcp preset catalog', () => {
     expect(res.body).toContain('Built in');
     expect(res.body).toContain('Web Search');
     expect(res.body).toContain('Connect a service');
-    expect(res.body).toContain('Web Fetch');
+    expect(res.body).toContain('Slack');
   });
 });
 
