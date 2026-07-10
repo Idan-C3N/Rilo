@@ -2887,7 +2887,7 @@ git commit -m "feat: mcp_servers repo with encrypted creds"
 - Test: `tests/mcp/manager.test.ts`
 
 **Interfaces:**
-- Consumes: `listEnabledMcpServers`, `DB`, `@ai-sdk/mcp` `createMCPClient` + `StdioClientTransport`.
+- Consumes: `listEnabledMcpServers`, `DB`, `@ai-sdk/mcp` `createMCPClient` + `Experimental_StdioMCPTransport` (from the `@ai-sdk/mcp/mcp-stdio` subpath).
 - Produces: `assembleMcpTools(deps, userId): Promise<{ tools: ToolSet; closeAll: () => Promise<void> }>` where `deps = { db; makeClient?: (server: McpServer) => Promise<McpClientLike> }`. For each enabled server, create a client, call `.tools()`, merge into a `ToolSet` keyed as `${server.name}__${toolName}`. If a server throws, log + skip it (never throw). `closeAll` closes every opened client. `McpClientLike = { tools(): Promise<ToolSet>; close(): Promise<void> }`.
 
 - [ ] **Step 1: Write the failing test** — `tests/mcp/manager.test.ts`
@@ -2948,7 +2948,7 @@ Expected: FAIL — module not found.
 ```typescript
 import type { ToolSet } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
-import { StdioClientTransport } from '@ai-sdk/mcp';
+import { Experimental_StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio';
 import type { DB } from '../db/db.js';
 import { listEnabledMcpServers, type McpServer } from '../db/mcp.js';
 
@@ -2964,14 +2964,16 @@ export interface ManagerDeps {
 
 export async function defaultMakeClient(server: McpServer): Promise<McpClientLike> {
   if (server.transport === 'stdio') {
-    const transport = new StdioClientTransport({
+    // Stdio transport is a class from the @ai-sdk/mcp/mcp-stdio subpath (the
+    // config-object form of createMCPClient only supports http/sse).
+    const transport = new Experimental_StdioMCPTransport({
       command: server.command!,
       args: server.args,
       env: server.creds,
     });
     return (await createMCPClient({ transport })) as unknown as McpClientLike;
   }
-  // http or sse
+  // http or sse via the config-object transport form
   return (await createMCPClient({
     transport: { type: server.transport, url: server.url!, headers: server.creds },
   })) as unknown as McpClientLike;
@@ -3012,7 +3014,7 @@ export async function assembleMcpTools(
 Run: `npx vitest run tests/mcp/manager.test.ts`
 Expected: PASS (2 tests).
 
-Note: verify the exact `@ai-sdk/mcp` export names (`createMCPClient`, `StdioClientTransport`) against the installed version; if the package instead exposes `experimental_createMCPClient` from `ai`, adjust the import in `defaultMakeClient` only — the manager's tested logic is unaffected since `makeClient` is injected in tests.
+Note: verified against installed `@ai-sdk/mcp@1.x` — `createMCPClient` is the main export; the stdio transport class is `Experimental_StdioMCPTransport` from the `@ai-sdk/mcp/mcp-stdio` subpath (there is NO `StdioClientTransport`). The config-object `transport` form only supports `{ type: 'http' | 'sse' }`. The manager's tested logic is unaffected regardless, since `makeClient` is injected in tests.
 
 - [ ] **Step 5: Commit**
 
