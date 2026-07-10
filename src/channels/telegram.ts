@@ -27,6 +27,7 @@ export function createTelegramAdapter(
   bot.on('message:text', async (ctx: any) => {
     if (!handler) return;
     await handler({
+      channel: 'telegram',
       channelUserId: String(ctx.from.id),
       text: ctx.message.text,
       name: ctx.from.first_name,
@@ -34,6 +35,7 @@ export function createTelegramAdapter(
   });
 
   return {
+    channel: 'telegram',
     start: () => bot.start(),
     stop: () => bot.stop(),
     onMessage: (h) => { handler = h; },
@@ -44,6 +46,7 @@ export function createTelegramAdapter(
       let timer: ReturnType<typeof setInterval> | null = null;
       return {
         start: () => {
+          if (timer) return;
           void bot.api.sendChatAction(channelUserId, 'typing');
           timer = setInterval(() => {
             void bot.api.sendChatAction(channelUserId, 'typing');

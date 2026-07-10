@@ -1,4 +1,5 @@
 export interface InboundMessage {
+  channel: string;
   channelUserId: string;
   text: string;
   name?: string;
@@ -10,6 +11,7 @@ export interface TypingController {
 }
 
 export interface ChannelAdapter {
+  readonly channel: string;
   start(): void;
   stop(): Promise<void>;
   send(channelUserId: string, text: string): Promise<void>;

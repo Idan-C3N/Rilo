@@ -27,7 +27,7 @@ describe('telegram adapter', () => {
     adapter.onMessage(async (m) => { received.push(m); });
     adapter.start();
     await f.fire({ from: { id: 42, first_name: 'Ann' }, message: { text: 'hi' } });
-    expect(received[0]).toEqual({ channelUserId: '42', text: 'hi', name: 'Ann' });
+    expect(received[0]).toEqual({ channel: 'telegram', channelUserId: '42', text: 'hi', name: 'Ann' });
     await adapter.send('42', 'yo');
     expect(f.calls.sendMessage).toEqual([['42', 'yo']]);
   });
