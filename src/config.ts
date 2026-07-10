@@ -6,6 +6,7 @@ export interface AppConfig {
   webPort: number;
   webBaseUrl: string;
   heartbeatDefaultMin: number;
+  tavilyApiKey?: string;
 }
 
 function req(env: NodeJS.ProcessEnv, key: string): string {
@@ -24,5 +25,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
     webPort,
     webBaseUrl: env.WEB_BASE_URL || `http://localhost:${webPort}`,
     heartbeatDefaultMin: Number(env.HEARTBEAT_DEFAULT_MIN ?? '30'),
+    tavilyApiKey: env.TAVILY_API_KEY || undefined,
   };
 }

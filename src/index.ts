@@ -28,7 +28,7 @@ const generate: GenerateFn = async (args) =>
 
 const adapter = createTelegramAdapter({ token: appCfg.telegramToken });
 
-const buildTools = (userId: number) => buildToolsFor({ db, userId });
+const buildTools = (userId: number) => buildToolsFor({ db, userId, webSearchKey: appCfg.tavilyApiKey });
 
 adapter.onMessage((m) =>
   handleInbound(
