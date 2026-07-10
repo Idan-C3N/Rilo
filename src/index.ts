@@ -11,8 +11,7 @@ import { startScheduler } from './scheduler/scheduler.js';
 import { fireReminder } from './scheduler/fire.js';
 // TODO(Task 12): wire real tool building once src/agent/tools/index.ts exists.
 // import { buildToolsFor } from './agent/tools/index.js';
-// TODO(Task 19): implement fireHeartbeat in src/scheduler/heartbeat.ts.
-// import { fireHeartbeat } from './scheduler/heartbeat.js';
+import { fireHeartbeat, seedHeartbeats } from './scheduler/heartbeat.js';
 // TODO(Task 25): wire web server once src/web/server.ts exists.
 // import { startWeb } from './web/server.js';
 
@@ -50,7 +49,8 @@ adapter.onMessage((m) =>
   ),
 );
 
-startScheduler({ db, appCfg, adapter, generate, channel: adapter.channel, fireReminder, fireHeartbeat: async () => {} });
+seedHeartbeats(db, appCfg);
+startScheduler({ db, appCfg, adapter, generate, channel: adapter.channel, fireReminder, fireHeartbeat });
 // TODO(Task 25): await startWeb({ db, appCfg, adapter });
 adapter.start();
 console.log('personal-agent running');
