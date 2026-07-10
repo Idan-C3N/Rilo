@@ -41,4 +41,16 @@ describe('runAgentTurn', () => {
     await runAgentTurn({ db, appCfg: {} as any, generate }, { userId: uid, input: 'q2' });
     expect(seen.map((m) => m.content)).toEqual(['q1', 'a1', 'q2']);
   });
+
+  it('feeds the stored rolling summary into the model system prompt', async () => {
+    db.prepare(
+      `INSERT INTO summaries (user_id, summary, last_summarized_msg_id) VALUES (?, ?, ?)`,
+    ).run(uid, 'User is planning a trip to Japan in October.', 0);
+
+    let seenSystem: string | undefined;
+    const generate = async (args: any) => { seenSystem = args.system; return { text: 'ok' }; };
+    await runAgentTurn({ db, appCfg: {} as any, generate }, { userId: uid, input: 'what was I planning?' });
+
+    expect(seenSystem).toContain('User is planning a trip to Japan in October.');
+  });
 });

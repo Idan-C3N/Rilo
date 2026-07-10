@@ -1,7 +1,8 @@
 import type { CoreMessage, LanguageModel, ToolSet } from 'ai';
 import type { DB } from '../db/db.js';
 import type { AppConfig } from '../config.js';
-import { addMessage, recentMessages } from '../db/messages.js';
+import { addMessage } from '../db/messages.js';
+import { buildContext } from './history.js';
 import { resolveModels } from './models.js';
 
 const HISTORY_LIMIT = 20;
@@ -32,11 +33,9 @@ export async function runAgentTurn(deps: AgentDeps, opts: TurnOpts): Promise<str
   const { db } = deps;
   addMessage(db, opts.userId, 'user', opts.input);
 
-  const history = recentMessages(db, opts.userId, HISTORY_LIMIT);
-  const messages: CoreMessage[] = history.map((m) => ({
-    role: m.role === 'system' ? 'system' : m.role,
-    content: m.content,
-  })) as CoreMessage[];
+  const ctx = buildContext(db, opts.userId, HISTORY_LIMIT);
+  const messages: CoreMessage[] = ctx.messages;
+  const system = [opts.system, ctx.system].filter(Boolean).join('\n\n') || undefined;
 
   const models = resolveModels(db, deps.appCfg, opts.userId);
   const model = opts.useStrong ? models.strong : models.cheap;
@@ -45,7 +44,7 @@ export async function runAgentTurn(deps: AgentDeps, opts: TurnOpts): Promise<str
   try {
     const result = await deps.generate({
       model,
-      system: opts.system,
+      system,
       messages,
       tools: built?.tools,
     });

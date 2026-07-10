@@ -66,6 +66,18 @@ describe('heartbeat', () => {
     expect(db.prepare("SELECT COUNT(*) c FROM jobs WHERE type='heartbeat' AND status='pending'").get()).toEqual({ c: 1 });
   });
 
+  it('never throws and still reschedules when decideHeartbeat fails transiently', async () => {
+    const depsThrowing = {
+      db, appCfg: {} as any, channel: 'telegram',
+      adapter: { send: async (id: string, t: string) => { sent.push([id, t]); } },
+      generate: async () => ({ text: '' }),
+      decideHeartbeat: async () => { throw new Error('network blip'); },
+    } as any;
+    await expect(fireHeartbeat(depsThrowing, job())).resolves.toBeUndefined();
+    expect(pendingHeartbeat(db, uid)).toBeDefined();
+    expect(sent).toEqual([]);
+  });
+
   it('reschedules even when the user has no linked identity for the channel', async () => {
     const depsNoIdentity = {
       db, appCfg: {} as any, channel: 'whatsapp', // no identity for whatsapp

@@ -48,19 +48,26 @@ export async function fireHeartbeat(deps: HeartbeatDeps, job: Job): Promise<void
     payload: {},
   });
 
-  // 2. Quiet hours → silent (already rescheduled).
-  if (isQuiet(user, Date.now())) return;
+  try {
+    // 2. Quiet hours → silent (already rescheduled).
+    if (isQuiet(user, Date.now())) return;
 
-  // 3. Resolve delivery target; if none, skip messaging (already rescheduled).
-  const ext = getExternalId(deps.db, user.id, deps.channel);
-  if (!ext) return;
+    // 3. Resolve delivery target; if none, skip messaging (already rescheduled).
+    const ext = getExternalId(deps.db, user.id, deps.channel);
+    if (!ext) return;
 
-  // 4. Gate decision + act.
-  const decide = deps.decideHeartbeat ?? decideHeartbeat;
-  const decision = await decide(deps, user.id);
-  if (decision.act && decision.message) {
-    addMessage(deps.db, user.id, 'assistant', decision.message);
-    await deps.adapter.send(ext, decision.message);
+    // 4. Gate decision + act.
+    const decide = deps.decideHeartbeat ?? decideHeartbeat;
+    const decision = await decide(deps, user.id);
+    if (decision.act && decision.message) {
+      addMessage(deps.db, user.id, 'assistant', decision.message);
+      await deps.adapter.send(ext, decision.message);
+    }
+  } catch (err) {
+    // Next heartbeat is already scheduled; never let a transient failure here
+    // propagate and leave the current job pending (which would cause the
+    // scheduler to retry and reschedule again, compounding duplicate jobs).
+    console.error('heartbeat failed after reschedule', err);
   }
 }
 
