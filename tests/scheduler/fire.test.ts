@@ -34,4 +34,18 @@ describe('fireReminder', () => {
     expect(sent).toEqual([['chat55', 'Reminder: buy milk 🥛']]);
     expect(recentMessages(db, uid, 5).at(-1)?.content).toBe('Reminder: buy milk 🥛');
   });
+
+  it('phrases followup check-in distinctly with task payload', async () => {
+    const deps: any = {
+      db, appCfg: {}, channel: 'telegram',
+      adapter: { send: async (id: string, text: string) => { sent.push([id, text]); } },
+      generate: async (args: any) => {
+        expect(JSON.stringify(args.messages)).toContain('submit tax form');
+        return { text: 'Did you get a chance to submit that tax form?' };
+      },
+    };
+    await fireReminder(deps, { id: 2, user_id: uid, type: 'followup', fire_at: 0, payload: { task: 'submit tax form' }, status: 'pending' });
+    expect(sent).toEqual([['chat55', 'Did you get a chance to submit that tax form?']]);
+    expect(recentMessages(db, uid, 5).at(-1)?.content).toBe('Did you get a chance to submit that tax form?');
+  });
 });
