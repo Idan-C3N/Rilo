@@ -201,3 +201,37 @@ OpenRouter key (+ credits); home IP.
 5. WhatsApp: **defer to later** (official Business API when built; core stays channel-agnostic).
 6. Reminder phrasing: **mini agent turn at fire time** (quality preferred).
 7. Telegram **typing indicator** kept alive while the agent thinks (reactive path).
+
+---
+
+## Addendum — post-implementation changes (2026-07-10)
+
+The system was built and is running. Notable changes/decisions made during
+implementation and live testing, superseding the above where they conflict:
+
+- **Agent name:** Rilo.
+- **Identity model (changed):** users are no longer keyed by a per-platform column.
+  A normalized `identities(channel, external_id)` table maps identities → users, so a
+  new messaging platform needs zero schema change. Resolve via `getUserByIdentity`;
+  deliver via `getExternalId(userId, channel)`.
+- **Models:** default cheap = `anthropic/claude-haiku-4.5`, strong =
+  `anthropic/claude-sonnet-5` (valid OpenRouter slugs; stale `claude-3.5-*` 404).
+  Provider: `@openrouter/ai-sdk-provider@^1` + npm override pinning `@ai-sdk/provider`
+  to match `ai` v5; models built with `openrouter.chat()`.
+- **Web search (new, default):** a native `web_search` tool (Tavily backend) is a
+  **built-in default for all users** whenever the instance sets `TAVILY_API_KEY` —
+  not a per-user integration. Gated absent when no key.
+- **"Services" UX (reframed MCP):** users see **Services**, never "MCP". The web UI
+  offers a curated catalog of one-click service presets (`src/mcp/presets.ts`) where
+  the user pastes only the required secret(s); raw MCP config lives under "Advanced".
+  MCP remains the under-the-hood mechanism. Planned: Google Workspace (OAuth, via a
+  loopback refresh-token helper to stay firewall-only) and Slack (bot token).
+- **Persona (new):** `BASE_PERSONA` gives Rilo a warm, proactive voice — replies in
+  the user's language, proactively calls `remember` for durable facts/goals/contacts,
+  confirms-then-offers-next-step, and reasons about sensible reminder lead times. The
+  heartbeat gate is goal-aware (nudges toward stated goals like a job search).
+- **Robustness fixes:** Telegram handler errors are contained so long polling never
+  dies; heartbeat always reschedules before any guard; `openDb` creates its data dir;
+  scheduled LLM paths re-check allowlist.
+- **Testing reality:** 82 tests, `tsc` clean. Local uses a separate **test** Telegram
+  bot; prod token only on the VPS.
