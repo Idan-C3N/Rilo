@@ -5,13 +5,16 @@ import { MCP_PRESETS, getPreset } from '../../mcp/presets.js';
 import { hasOAuthToken, setOAuthToken, deleteOAuthToken } from '../../db/oauth.js';
 import { layout, esc } from '../render.js';
 
-/** The Google Workspace connect card (only shown when the instance has OAuth creds). */
-function renderGoogle(db: DB, userId: number): string {
-  const connected = hasOAuthToken(db, userId, 'google');
-  if (connected) {
-    return `<div class="card"><b>📧 Google Workspace</b> — connected ✅ (Gmail + Calendar)
-      <form method="post" action="/google/disconnect"><button>Disconnect</button></form></div>`;
-  }
+/** Google card when CONNECTED (shown under "Your services"). Empty otherwise. */
+function renderGoogleConnected(db: DB, userId: number, enabled: boolean): string {
+  if (!enabled || !hasOAuthToken(db, userId, 'google')) return '';
+  return `<div class="card"><b>📧 Google Workspace</b> — connected ✅ (Gmail + Calendar)
+    <form method="post" action="/google/disconnect"><button>Disconnect</button></form></div>`;
+}
+
+/** Google card when NOT connected (shown under "Connect a service"). Empty otherwise. */
+function renderGoogleConnect(db: DB, userId: number, enabled: boolean): string {
+  if (!enabled || hasOAuthToken(db, userId, 'google')) return '';
   return `<div class="card"><b>📧 Google Workspace</b> — Gmail + Calendar
     <div>Connect once: run the loopback helper locally, then paste the refresh token here.</div>
     <ol>
@@ -44,7 +47,7 @@ function renderPresets(): string {
       </form>
     </div>`;
   }).join('');
-  return `<h2>Connect a service</h2>${cards}`;
+  return cards;
 }
 
 const BUILTIN_SECTION = `<h2>Built in</h2>
@@ -67,7 +70,8 @@ export function registerMcpRoutes(
   app.get('/mcp', async (req, reply) => {
     const userId = (req as any).userId as number;
     const servers = listMcpServers(db, userId);
-    const googleCard = opts.googleEnabled ? renderGoogle(db, userId) : '';
+    const googleConnected = renderGoogleConnected(db, userId, opts.googleEnabled);
+    const googleConnect = renderGoogleConnect(db, userId, opts.googleEnabled);
     const rows = servers
       .map(
         (s) => `<div class="card"><b>${esc(s.name)}</b> (${esc(s.transport)}) ${s.enabled ? '🟢' : '⚪️'}
@@ -82,8 +86,10 @@ export function registerMcpRoutes(
         'Services',
         `${BUILTIN_SECTION}
         <h2>Your services</h2>
-        ${googleCard}
-        ${rows || '<p>No custom services connected yet.</p>'}
+        ${googleConnected}${rows}
+        ${!googleConnected && !rows ? '<p>No services connected yet.</p>' : ''}
+        <h2>Connect a service</h2>
+        ${googleConnect}
         ${renderPresets()}
         <details><summary>Advanced: connect a custom MCP server manually</summary>
         <div class="card"><h3>Add server</h3>
