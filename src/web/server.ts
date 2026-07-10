@@ -11,7 +11,7 @@ import { layout } from './render.js';
 
 export interface WebDeps {
   db: DB;
-  appCfg: Pick<AppConfig, 'openrouterKeyFallback'>;
+  appCfg: Pick<AppConfig, 'openrouterKeyFallback' | 'googleClientId' | 'googleClientSecret'>;
 }
 
 const PUBLIC_PATHS = new Set(['/login']);
@@ -57,7 +57,9 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
   });
 
   registerModelsRoutes(app, deps.db);
-  registerMcpRoutes(app, deps.db);
+  registerMcpRoutes(app, deps.db, {
+    googleEnabled: !!(deps.appCfg.googleClientId && deps.appCfg.googleClientSecret),
+  });
   return app;
 }
 

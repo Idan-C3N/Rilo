@@ -61,3 +61,31 @@ Copy `.env.example` to `.env` and fill in:
 - Logs: `ssh root@<SERVER_IP> journalctl -u personal-agent -f`
 - Redeploy after code changes: re-run `SERVER_IP=<SERVER_IP> ./provisioning/deploy.sh`.
 - The UI/SSH are only reachable from `OWNER_IP` per the Hetzner firewall; if your IP changes, update the firewall rule in the Hetzner console (or re-run provisioning).
+
+## Connecting Google Workspace (Gmail + Calendar)
+
+Rilo talks to Google with **native tools** using a per-user OAuth refresh token
+(stored encrypted). One-time operator setup + a per-user connect step.
+
+### Operator: create a Google OAuth client (once)
+1. In [Google Cloud Console](https://console.cloud.google.com): create/select a project.
+2. Enable the **Gmail API** and **Google Calendar API**.
+3. Configure the OAuth consent screen (External; add yourself + any users as test users).
+4. Create an **OAuth client ID** of type **Desktop app** → copy the client id + secret.
+5. Put them in `.env`:
+   ```
+   GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=...
+   ```
+   Restart Rilo. The "Google Workspace" card now appears on the Services screen.
+
+### Each user: connect (once)
+1. From the repo, run the loopback helper:
+   ```
+   node --env-file=.env --import tsx scripts/google-auth.ts
+   ```
+2. Open the printed URL, approve access. It prints a **refresh token**.
+3. In Rilo's web UI → **Services → Connect Google**, paste the refresh token.
+
+Rilo can now search/read/send Gmail and list/create Calendar events for that user.
+Disconnect anytime from the same screen.

@@ -2,7 +2,28 @@ import type { FastifyInstance } from 'fastify';
 import type { DB } from '../../db/db.js';
 import { addMcpServer, listMcpServers, setMcpEnabled, deleteMcpServer, type McpTransport } from '../../db/mcp.js';
 import { MCP_PRESETS, getPreset } from '../../mcp/presets.js';
+import { hasOAuthToken, setOAuthToken, deleteOAuthToken } from '../../db/oauth.js';
 import { layout, esc } from '../render.js';
+
+/** The Google Workspace connect card (only shown when the instance has OAuth creds). */
+function renderGoogle(db: DB, userId: number): string {
+  const connected = hasOAuthToken(db, userId, 'google');
+  if (connected) {
+    return `<div class="card"><b>📧 Google Workspace</b> — connected ✅ (Gmail + Calendar)
+      <form method="post" action="/google/disconnect"><button>Disconnect</button></form></div>`;
+  }
+  return `<div class="card"><b>📧 Google Workspace</b> — Gmail + Calendar
+    <div>Connect once: run the loopback helper locally, then paste the refresh token here.</div>
+    <ol>
+      <li>From the repo: <code>node --env-file=.env --import tsx scripts/google-auth.ts</code></li>
+      <li>Open the printed URL, approve access.</li>
+      <li>Paste the refresh token it prints below.</li>
+    </ol>
+    <form method="post" action="/google/connect">
+      <label>Refresh token<input name="refresh_token" type="password" placeholder="1//0..."></label>
+      <button type="submit">Connect Google</button>
+    </form></div>`;
+}
 
 /** Render the one-click preset catalog: a small card + form per preset. */
 function renderPresets(): string {
@@ -38,10 +59,15 @@ function parseCreds(text: string): Record<string, string> | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
-export function registerMcpRoutes(app: FastifyInstance, db: DB): void {
+export function registerMcpRoutes(
+  app: FastifyInstance,
+  db: DB,
+  opts: { googleEnabled: boolean } = { googleEnabled: false },
+): void {
   app.get('/mcp', async (req, reply) => {
     const userId = (req as any).userId as number;
     const servers = listMcpServers(db, userId);
+    const googleCard = opts.googleEnabled ? renderGoogle(db, userId) : '';
     const rows = servers
       .map(
         (s) => `<div class="card"><b>${esc(s.name)}</b> (${esc(s.transport)}) ${s.enabled ? '🟢' : '⚪️'}
@@ -56,7 +82,8 @@ export function registerMcpRoutes(app: FastifyInstance, db: DB): void {
         'Services',
         `${BUILTIN_SECTION}
         <h2>Your services</h2>
-        ${rows || '<p>No services connected yet.</p>'}
+        ${googleCard}
+        ${rows || '<p>No custom services connected yet.</p>'}
         ${renderPresets()}
         <details><summary>Advanced: connect a custom MCP server manually</summary>
         <div class="card"><h3>Add server</h3>
@@ -120,6 +147,19 @@ export function registerMcpRoutes(app: FastifyInstance, db: DB): void {
       reply.redirect('/mcp');
     },
   );
+
+  app.post<{ Body: { refresh_token?: string } }>('/google/connect', async (req, reply) => {
+    const userId = (req as any).userId as number;
+    const rt = (req.body.refresh_token ?? '').trim();
+    if (rt) setOAuthToken(db, userId, 'google', rt);
+    reply.redirect('/mcp');
+  });
+
+  app.post('/google/disconnect', async (req, reply) => {
+    const userId = (req as any).userId as number;
+    deleteOAuthToken(db, userId, 'google');
+    reply.redirect('/mcp');
+  });
 
   app.post<{ Params: { id: string } }>('/mcp/:id/toggle', async (req, reply) => {
     const userId = (req as any).userId as number;

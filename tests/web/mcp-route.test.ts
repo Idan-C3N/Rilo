@@ -5,6 +5,7 @@ import { createUserWithIdentity } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { startLogin, verifyCode } from '../../src/db/sessions.js';
 import { listMcpServers, addMcpServer } from '../../src/db/mcp.js';
+import { hasOAuthToken } from '../../src/db/oauth.js';
 import { buildWebApp } from '../../src/web/server.js';
 
 let db: DB, uid: number, app: any, cookie: string;
@@ -63,6 +64,31 @@ describe('mcp preset catalog', () => {
     expect(res.body).toContain('Web Search');
     expect(res.body).toContain('Connect a service');
     expect(res.body).toContain('Web Fetch');
+  });
+});
+
+describe('google connect flow', () => {
+  it('shows connect card + stores/removes the refresh token when google is enabled', async () => {
+    const gApp = await buildWebApp({ db, appCfg: { googleClientId: 'c', googleClientSecret: 's' } as any });
+    // not connected → connect form visible
+    let res = await gApp.inject({ method: 'GET', url: '/mcp', headers: { cookie } });
+    expect(res.body).toContain('Google Workspace');
+    expect(res.body).toContain('Connect Google');
+    // connect
+    res = await gApp.inject({ method: 'POST', url: '/google/connect', headers: { cookie }, payload: { refresh_token: '1//refresh' } });
+    expect(res.statusCode).toBe(302);
+    expect(hasOAuthToken(db, uid, 'google')).toBe(true);
+    // now shows connected
+    res = await gApp.inject({ method: 'GET', url: '/mcp', headers: { cookie } });
+    expect(res.body).toContain('connected');
+    // disconnect
+    res = await gApp.inject({ method: 'POST', url: '/google/disconnect', headers: { cookie } });
+    expect(hasOAuthToken(db, uid, 'google')).toBe(false);
+  });
+
+  it('hides the google card when google is not enabled', async () => {
+    const res = await app.inject({ method: 'GET', url: '/mcp', headers: { cookie } });
+    expect(res.body).not.toContain('Google Workspace');
   });
 });
 
