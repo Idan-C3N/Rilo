@@ -5,6 +5,7 @@ import type { DB } from '../db/db.js';
 import type { AppConfig } from '../config.js';
 import { sessionUserId } from './auth.js';
 import { verifyCode } from '../db/sessions.js';
+import { registerHomeRoutes } from './routes/home.js';
 import { registerModelsRoutes } from './routes/models.js';
 import { registerMcpRoutes } from './routes/mcp.js';
 import { layout, flash } from './render.js';
@@ -70,6 +71,10 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
     reply.redirect('/login');
   });
 
+  registerHomeRoutes(app, deps.db, {
+    googleEnabled: !!(deps.appCfg.googleClientId && deps.appCfg.googleClientSecret),
+    hasOpenrouterFallback: !!deps.appCfg.openrouterKeyFallback,
+  });
   registerModelsRoutes(app, deps.db);
   registerMcpRoutes(app, deps.db, {
     googleEnabled: !!(deps.appCfg.googleClientId && deps.appCfg.googleClientSecret),
