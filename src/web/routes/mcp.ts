@@ -9,7 +9,7 @@ import { layout, esc, type Flash } from '../render.js';
 function renderGoogleConnected(db: DB, userId: number, enabled: boolean): string {
   if (!enabled || !hasOAuthToken(db, userId, 'google')) return '';
   return `<div class="card"><b>📧 Google Workspace</b> — connected ✅ (Gmail + Calendar)
-    <form method="post" action="/google/disconnect"><button class="btn-secondary">Disconnect</button></form></div>`;
+    <form method="post" action="/google/disconnect" hx-post="/google/disconnect" hx-target="#services" hx-swap="outerHTML"><button class="btn-secondary">Disconnect</button></form></div>`;
 }
 
 /** Google card when NOT connected (shown under "Connect a service"). Empty otherwise. */
@@ -22,7 +22,7 @@ function renderGoogleConnect(db: DB, userId: number, enabled: boolean): string {
       <li>Open the printed URL, approve access.</li>
       <li>Paste the refresh token it prints below.</li>
     </ol>
-    <form method="post" action="/google/connect">
+    <form method="post" action="/google/connect" hx-post="/google/connect" hx-target="#services" hx-swap="outerHTML">
       <label>Refresh token<input name="refresh_token" type="password" placeholder="1//0..."></label>
       <button type="submit">Connect Google</button>
     </form></div>`;
@@ -59,39 +59,20 @@ const SAVED_FLASH: Record<string, Flash> = {
   google: { kind: 'ok', msg: 'Google connected ✅' },
 };
 
-function parseCreds(text: string): Record<string, string> | undefined {
-  const out: Record<string, string> = {};
-  for (const line of text.split('\n').map((l) => l.trim()).filter(Boolean)) {
-    const idx = line.indexOf('=');
-    if (idx > 0) out[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-  }
-  return Object.keys(out).length ? out : undefined;
-}
-
-export function registerMcpRoutes(
-  app: FastifyInstance,
-  db: DB,
-  opts: { googleEnabled: boolean } = { googleEnabled: false },
-): void {
-  app.get<{ Querystring: { saved?: string } }>('/mcp', async (req, reply) => {
-    const userId = (req as any).userId as number;
-    const servers = listMcpServers(db, userId);
-    const googleConnected = renderGoogleConnected(db, userId, opts.googleEnabled);
-    const googleConnect = renderGoogleConnect(db, userId, opts.googleEnabled);
-    const rows = servers
-      .map(
-        (s) => `<div class="card"><b>${esc(s.name)}</b> (${esc(s.transport)}) ${s.enabled ? '🟢' : '⚪️'}
-        <div class="muted">${esc(s.url ?? s.command ?? '')}</div>
-        <form method="post" action="/mcp/${s.id}/toggle" class="inline-form"><button class="btn-secondary">${s.enabled ? 'Disable' : 'Enable'}</button></form>
-        <form method="post" action="/mcp/${s.id}/delete" class="inline-form"><button class="btn-danger">Delete</button></form>
-        </div>`,
-      )
-      .join('');
-    const flash = req.query.saved ? SAVED_FLASH[req.query.saved] : undefined;
-    reply.type('text/html').send(
-      layout(
-        'Services',
-        `${BUILTIN_SECTION}
+function renderServicesBody(db: DB, userId: number, opts: { googleEnabled: boolean }): string {
+  const servers = listMcpServers(db, userId);
+  const googleConnected = renderGoogleConnected(db, userId, opts.googleEnabled);
+  const googleConnect = renderGoogleConnect(db, userId, opts.googleEnabled);
+  const rows = servers
+    .map(
+      (s) => `<div class="card"><b>${esc(s.name)}</b> (${esc(s.transport)}) ${s.enabled ? '🟢' : '⚪️'}
+      <div class="muted">${esc(s.url ?? s.command ?? '')}</div>
+      <form method="post" action="/mcp/${s.id}/toggle" class="inline-form" hx-post="/mcp/${s.id}/toggle" hx-target="#services" hx-swap="outerHTML"><button class="btn-secondary">${s.enabled ? 'Disable' : 'Enable'}</button></form>
+      <form method="post" action="/mcp/${s.id}/delete" class="inline-form" hx-post="/mcp/${s.id}/delete" hx-target="#services" hx-swap="outerHTML" hx-confirm="Remove this service?"><button class="btn-danger">Delete</button></form>
+      </div>`,
+    )
+    .join('');
+  return `<div id="services">${BUILTIN_SECTION}
         <h2>Your services</h2>
         ${googleConnected}${rows}
         ${!googleConnected && !rows ? '<div class="empty">No services connected yet. Connect one below.</div>' : ''}
@@ -110,9 +91,29 @@ export function registerMcpRoutes(
           <label>URL (http/sse)<input name="url" placeholder="https://host/mcp"></label>
           <label>Creds (KEY=VALUE per line)<textarea name="creds" rows="3"></textarea></label>
           <button type="submit">Add</button>
-        </form></div></details>`,
-        { active: 'services', flash },
-      ),
+        </form></div></details></div>`;
+}
+
+function parseCreds(text: string): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const line of text.split('\n').map((l) => l.trim()).filter(Boolean)) {
+    const idx = line.indexOf('=');
+    if (idx > 0) out[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+export function registerMcpRoutes(
+  app: FastifyInstance,
+  db: DB,
+  opts: { googleEnabled: boolean } = { googleEnabled: false },
+): void {
+  const hx = (req: any) => req.headers['hx-request'] === 'true';
+  app.get<{ Querystring: { saved?: string } }>('/mcp', async (req, reply) => {
+    const userId = (req as any).userId as number;
+    const flash = req.query.saved ? SAVED_FLASH[req.query.saved] : undefined;
+    reply.type('text/html').send(
+      layout('Services', renderServicesBody(db, userId, opts), { active: 'services', flash }),
     );
   });
 
@@ -166,12 +167,14 @@ export function registerMcpRoutes(
     const userId = (req as any).userId as number;
     const rt = (req.body.refresh_token ?? '').trim();
     if (rt) setOAuthToken(db, userId, 'google', rt);
+    if (hx(req)) { reply.type('text/html').send(renderServicesBody(db, userId, opts)); return; }
     reply.redirect('/mcp?saved=google');
   });
 
   app.post('/google/disconnect', async (req, reply) => {
     const userId = (req as any).userId as number;
     deleteOAuthToken(db, userId, 'google');
+    if (hx(req)) { reply.type('text/html').send(renderServicesBody(db, userId, opts)); return; }
     reply.redirect('/mcp');
   });
 
@@ -179,6 +182,7 @@ export function registerMcpRoutes(
     const userId = (req as any).userId as number;
     const server = listMcpServers(db, userId).find((s) => s.id === Number(req.params.id));
     if (server) setMcpEnabled(db, server.id, !server.enabled);
+    if (hx(req)) { reply.type('text/html').send(renderServicesBody(db, userId, opts)); return; }
     reply.redirect('/mcp');
   });
 
@@ -186,6 +190,7 @@ export function registerMcpRoutes(
     const userId = (req as any).userId as number;
     const server = listMcpServers(db, userId).find((s) => s.id === Number(req.params.id));
     if (server) deleteMcpServer(db, server.id);
+    if (hx(req)) { reply.type('text/html').send(renderServicesBody(db, userId, opts)); return; }
     reply.redirect('/mcp?saved=deleted');
   });
 }

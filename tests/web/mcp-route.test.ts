@@ -144,3 +144,54 @@ describe('services screen chrome', () => {
     expect(res.body).toContain('flash-ok');
   });
 });
+
+describe('htmx region swap', () => {
+  it('plain toggle still redirects (no-JS fallback)', async () => {
+    const { addMcpServer } = await import('../../src/db/mcp.js');
+    addMcpServer(db, uid, { name: 'S', transport: 'stdio', command: 'x', args: [] });
+    const id = (await import('../../src/db/mcp.js')).listMcpServers(db, uid)[0]!.id;
+    const res = await app.inject({ method: 'POST', url: `/mcp/${id}/toggle`, headers: { cookie } });
+    expect(res.statusCode).toBe(302);
+  });
+
+  it('htmx toggle returns the #services region with the flipped state', async () => {
+    const { addMcpServer, listMcpServers } = await import('../../src/db/mcp.js');
+    addMcpServer(db, uid, { name: 'S', transport: 'stdio', command: 'x', args: [] });
+    const id = listMcpServers(db, uid)[0]!.id;
+    const res = await app.inject({
+      method: 'POST', url: `/mcp/${id}/toggle`,
+      headers: { cookie, 'hx-request': 'true' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('<div id="services">');
+    expect(res.body).toContain('Enable'); // was enabled by default → now disabled → shows "Enable"
+  });
+
+  it('htmx delete returns the region without the deleted service', async () => {
+    const { addMcpServer, listMcpServers } = await import('../../src/db/mcp.js');
+    addMcpServer(db, uid, { name: 'ZapService', transport: 'stdio', command: 'x', args: [] });
+    const id = listMcpServers(db, uid)[0]!.id;
+    const res = await app.inject({
+      method: 'POST', url: `/mcp/${id}/delete`,
+      headers: { cookie, 'hx-request': 'true' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('<div id="services">');
+    expect(res.body).not.toContain('ZapService');
+  });
+
+  it('htmx google connect returns the region showing the connected card', async () => {
+    const gApp = await buildWebApp({
+      db, getModels: async () => [],
+      appCfg: { googleClientId: 'x', googleClientSecret: 'y' } as any,
+    });
+    const res = await gApp.inject({
+      method: 'POST', url: '/google/connect',
+      headers: { cookie, 'hx-request': 'true' },
+      payload: { refresh_token: '1//abc' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('<div id="services">');
+    expect(res.body).toContain('Disconnect');
+  });
+});
