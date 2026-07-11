@@ -24,7 +24,7 @@ export function registerHomeRoutes(
       ? 'Your key is set ✅'
       : opts.hasOpenrouterFallback
         ? 'Using the instance key ✅'
-        : 'Not set yet — add one to start';
+        : 'Not set ❌ — add one to start';
     const serviceCount =
       listMcpServers(db, userId).filter((s) => s.enabled).length +
       (opts.googleEnabled && hasOAuthToken(db, userId, 'google') ? 1 : 0);
