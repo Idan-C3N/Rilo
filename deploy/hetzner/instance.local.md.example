@@ -1,0 +1,10 @@
+# My live instance (private — copy to instance.local.md, which is gitignored)
+
+- Server: <PROVIDER/TYPE>, IP `<SERVER_IP>` (region <REGION>).
+  Firewall locks SSH + UI to the owner IP only.
+- SSH key: `<SSH_KEY_NAME>` (path `~/.ssh/<SSH_KEY_NAME>`); add a
+  `Host <SERVER_IP>` block in `~/.ssh/config` so `ssh root@<SERVER_IP>` just works.
+- Redeploy: `SERVER_IP=<SERVER_IP> ./deploy/hetzner/deploy.sh`
+- Logs: `ssh root@<SERVER_IP> journalctl -u personal-agent -f`
+- Prod secrets (bot token, ENC_KEY) live only in the server's /opt/personal-agent/.env —
+  never here, never committed.
