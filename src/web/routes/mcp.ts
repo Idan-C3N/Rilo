@@ -3,7 +3,7 @@ import type { DB } from '../../db/db.js';
 import { addMcpServer, listMcpServers, setMcpEnabled, deleteMcpServer, type McpTransport } from '../../db/mcp.js';
 import { MCP_PRESETS, getPreset } from '../../mcp/presets.js';
 import { hasOAuthToken, setOAuthToken, deleteOAuthToken } from '../../db/oauth.js';
-import { layout, esc } from '../render.js';
+import { layout, esc, type Flash } from '../render.js';
 
 /** Google card when CONNECTED (shown under "Your services"). Empty otherwise. */
 function renderGoogleConnected(db: DB, userId: number, enabled: boolean): string {
@@ -53,6 +53,12 @@ function renderPresets(): string {
 const BUILTIN_SECTION = `<h2>Built in</h2>
   <div class="card"><b>🔎 Web Search</b> — always on, no setup needed.</div>`;
 
+const SAVED_FLASH: Record<string, Flash> = {
+  connected: { kind: 'ok', msg: 'Service connected ✅' },
+  deleted: { kind: 'ok', msg: 'Service removed ✅' },
+  google: { kind: 'ok', msg: 'Google connected ✅' },
+};
+
 function parseCreds(text: string): Record<string, string> | undefined {
   const out: Record<string, string> = {};
   for (const line of text.split('\n').map((l) => l.trim()).filter(Boolean)) {
@@ -67,7 +73,7 @@ export function registerMcpRoutes(
   db: DB,
   opts: { googleEnabled: boolean } = { googleEnabled: false },
 ): void {
-  app.get('/mcp', async (req, reply) => {
+  app.get<{ Querystring: { saved?: string } }>('/mcp', async (req, reply) => {
     const userId = (req as any).userId as number;
     const servers = listMcpServers(db, userId);
     const googleConnected = renderGoogleConnected(db, userId, opts.googleEnabled);
@@ -75,19 +81,20 @@ export function registerMcpRoutes(
     const rows = servers
       .map(
         (s) => `<div class="card"><b>${esc(s.name)}</b> (${esc(s.transport)}) ${s.enabled ? '🟢' : '⚪️'}
-        <div>${esc(s.url ?? s.command ?? '')}</div>
-        <form method="post" action="/mcp/${s.id}/toggle" style="display:inline"><button>${s.enabled ? 'Disable' : 'Enable'}</button></form>
-        <form method="post" action="/mcp/${s.id}/delete" style="display:inline"><button>Delete</button></form>
+        <div class="muted">${esc(s.url ?? s.command ?? '')}</div>
+        <form method="post" action="/mcp/${s.id}/toggle" class="inline-form"><button class="btn-secondary">${s.enabled ? 'Disable' : 'Enable'}</button></form>
+        <form method="post" action="/mcp/${s.id}/delete" class="inline-form"><button class="btn-danger">Delete</button></form>
         </div>`,
       )
       .join('');
+    const flash = req.query.saved ? SAVED_FLASH[req.query.saved] : undefined;
     reply.type('text/html').send(
       layout(
         'Services',
         `${BUILTIN_SECTION}
         <h2>Your services</h2>
         ${googleConnected}${rows}
-        ${!googleConnected && !rows ? '<p>No services connected yet.</p>' : ''}
+        ${!googleConnected && !rows ? '<div class="empty">No services connected yet. Connect one below.</div>' : ''}
         <h2>Connect a service</h2>
         ${googleConnect}
         ${renderPresets()}
@@ -104,6 +111,7 @@ export function registerMcpRoutes(
           <label>Creds (KEY=VALUE per line)<textarea name="creds" rows="3"></textarea></label>
           <button type="submit">Add</button>
         </form></div></details>`,
+        { active: 'services', flash },
       ),
     );
   });
@@ -134,7 +142,7 @@ export function registerMcpRoutes(
       url: url || undefined,
       creds: Object.keys(creds).length ? creds : undefined,
     });
-    reply.redirect('/mcp');
+    reply.redirect('/mcp?saved=connected');
   });
 
   app.post<{ Body: { name: string; transport: McpTransport; command?: string; args?: string; url?: string; creds?: string } }>(
@@ -150,7 +158,7 @@ export function registerMcpRoutes(
         url: b.url || undefined,
         creds: parseCreds(b.creds ?? ''),
       });
-      reply.redirect('/mcp');
+      reply.redirect('/mcp?saved=connected');
     },
   );
 
@@ -158,7 +166,7 @@ export function registerMcpRoutes(
     const userId = (req as any).userId as number;
     const rt = (req.body.refresh_token ?? '').trim();
     if (rt) setOAuthToken(db, userId, 'google', rt);
-    reply.redirect('/mcp');
+    reply.redirect('/mcp?saved=google');
   });
 
   app.post('/google/disconnect', async (req, reply) => {
@@ -178,6 +186,6 @@ export function registerMcpRoutes(
     const userId = (req as any).userId as number;
     const server = listMcpServers(db, userId).find((s) => s.id === Number(req.params.id));
     if (server) deleteMcpServer(db, server.id);
-    reply.redirect('/mcp');
+    reply.redirect('/mcp?saved=deleted');
   });
 }

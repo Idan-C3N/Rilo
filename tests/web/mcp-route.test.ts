@@ -129,3 +129,18 @@ describe('mcp route', () => {
     expect(listMcpServers(db, userB.id)[0]!.id).toBe(serverId);
   });
 });
+
+describe('services screen chrome', () => {
+  it('shows a friendly empty state when nothing is connected', async () => {
+    const res = await app.inject({ method: 'GET', url: '/mcp', headers: { cookie } });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('class="empty"');
+    expect(res.body).toContain('No services connected yet');
+    expect(res.body).toContain('aria-current="page"'); // Services nav active
+  });
+
+  it('renders a saved flash on /mcp?saved=connected', async () => {
+    const res = await app.inject({ method: 'GET', url: '/mcp?saved=connected', headers: { cookie } });
+    expect(res.body).toContain('flash-ok');
+  });
+});
