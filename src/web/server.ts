@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
+import { readFileSync } from 'node:fs';
 import type { DB } from '../db/db.js';
 import type { AppConfig } from '../config.js';
 import { sessionUserId } from './auth.js';
@@ -17,7 +18,10 @@ export interface WebDeps {
   getModels?: () => Promise<string[]>;
 }
 
-const PUBLIC_PATHS = new Set(['/login']);
+// Vendored htmx, read once at startup and served from memory (no build step).
+const HTMX_JS = readFileSync(new URL('./vendor/htmx.min.js', import.meta.url), 'utf8');
+
+const PUBLIC_PATHS = new Set(['/login', '/vendor/htmx.min.js']);
 
 export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
   const app = Fastify();
@@ -71,6 +75,11 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
   app.get('/logout', async (_req, reply) => {
     reply.clearCookie('token', { path: '/' });
     reply.redirect('/login');
+  });
+
+  app.get('/vendor/htmx.min.js', async (_req, reply) => {
+    reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+    reply.type('application/javascript').send(HTMX_JS);
   });
 
   registerHomeRoutes(app, deps.db, {

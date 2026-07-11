@@ -40,7 +40,8 @@ export function layout(
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
   <title>${esc(title)} · Rilo</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>${CSS}</style></head>
+  <style>${CSS}</style>
+  <script src="/vendor/htmx.min.js" defer></script></head>
   <body class="${opts.bare ? 'bare' : ''}">
   <header class="topbar"><div class="topbar-inner"><a class="brand" href="/">Rilo</a>${nav}</div></header>
   <main class="container">${flashHtml}${body}</main>
