@@ -18,7 +18,7 @@ beforeEach(async () => {
   const { token, code } = startLogin(db, uid);
   verifyCode(db, token, code);
   cookie = `token=${token}`;
-  app = await buildWebApp({ db, appCfg: {} as any });
+  app = await buildWebApp({ db, appCfg: {} as any, getModels: async () => ['anthropic/claude-haiku-4.5', 'anthropic/claude-sonnet-5'] });
 });
 
 describe('models route', () => {
