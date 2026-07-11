@@ -169,11 +169,38 @@ workstream's final review passes (same subagent-driven flow used so far).
 
 ---
 
+## #12 — Shared memory between people (household/group)  ·  effort: L  ·  needs brainstorm
+
+**Goal:** Let two or more allowlisted users share a common memory space so the agent has shared context across them — e.g. Idan + wife sharing household facts ("kids' school pickup is 15:30", "our anniversary is …", shopping list) without each having to re-teach the bot.
+
+**Current:** memory is per-user — `db/memory.ts` rows are keyed by `user_id`; `agent/tools/memory.ts` reads/writes only the calling user's memories; dispatch assembles context from that single user. No concept of a group.
+
+**Approach sketch (resolve in brainstorm):**
+- Introduce a **group/space** (e.g. `groups` + `group_members`, or a shared `space_id` on memory rows). A memory has a scope: **personal** (default) or **shared(space)**.
+- Memory tool gains a scope arg / the agent decides: "remember for the household" → shared; personal stays default. Context assembly merges the caller's personal memories **+** the shared-space memories.
+- Web UI: create/name a space, invite another allowlisted user, see/manage shared memories, leave a space.
+
+**Open decisions (brainstorm):**
+1. **Grouping model:** one implicit "household" per install vs named multi-space groups vs pairwise sharing.
+2. **Membership/invite:** owner adds a user to the space (ties into #9 onboarding) vs invite code vs auto (all allowlisted users share one space).
+3. **Write/read semantics:** can everyone write shared memories, or read-only for some? Can a member delete another's shared memory?
+4. **Scope choice:** does the agent auto-classify personal vs shared, or must the user say "remember for us"? Default scope?
+5. **Privacy boundary:** guarantee personal memories never leak into another member's context; make "shared" visibly distinct in the tool + UI.
+6. **Attribution:** track who wrote a shared memory (useful for trust + deletion rules).
+7. **Interaction with per-user model/keys:** shared memory, but each user still uses their own OpenRouter key/model.
+
+**Files (rough):** `db/memory.ts` (scope/space columns + queries), `db/users.ts` or new `db/groups.ts` (membership), `agent/tools/memory.ts` (scope-aware read/write), `agent/dispatch.ts` / context assembly (merge personal + shared), `web/` (manage spaces + members + shared memories), migration for existing rows (default personal). **Tests:** scope isolation (personal never bleeds), shared read/write across members, membership gates.
+
+**Conflicts:** `agent/dispatch.ts` (with #9/#11 auth cluster) + `db/memory.ts`. Depends conceptually on #9 (how users/groups are managed). Sequence **after** the auth/onboarding work.
+
+---
+
 ## Suggested sequencing (updated)
 
 1. ~~#8 ∥ #1~~ — done (#8 merged; #1 on branch). Public repo already pushed.
 2. **Merge #1** to `main` (independent; disjoint from the deploy/search work).
 3. **#3 security pass** — pressing now that the repo is public. Audit sessions/CSRF/rate-limit/deps/error-leak; fix; test.
 4. **#9** onboarding, then **#11** magic-link (or combine) — serialize (both touch `dispatch.ts`/login).
-5. **#5 README** rewrite (reflect #8 SearXNG default, single-Compose deploy, #1 outcome).
-6. **Live-box migration** systemd → Compose (when convenient; DB-backup first).
+5. **#12 shared/household memory** — after the auth/onboarding cluster (depends on how users/groups are managed; touches `dispatch.ts` + `db/memory.ts`).
+6. **#5 README** rewrite (reflect #8 SearXNG default, single-Compose deploy, #1 outcome).
+7. **Live-box migration** systemd → Compose (when convenient; DB-backup first).
