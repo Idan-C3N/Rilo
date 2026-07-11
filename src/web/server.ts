@@ -9,10 +9,12 @@ import { registerHomeRoutes } from './routes/home.js';
 import { registerModelsRoutes } from './routes/models.js';
 import { registerMcpRoutes } from './routes/mcp.js';
 import { layout, flash } from './render.js';
+import { getModelIds } from '../openrouter/catalog.js';
 
 export interface WebDeps {
   db: DB;
   appCfg: Pick<AppConfig, 'openrouterKeyFallback' | 'googleClientId' | 'googleClientSecret'>;
+  getModels?: () => Promise<string[]>;
 }
 
 const PUBLIC_PATHS = new Set(['/login']);
@@ -75,7 +77,7 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
     googleEnabled: !!(deps.appCfg.googleClientId && deps.appCfg.googleClientSecret),
     hasOpenrouterFallback: !!deps.appCfg.openrouterKeyFallback,
   });
-  registerModelsRoutes(app, deps.db);
+  registerModelsRoutes(app, deps.db, deps.getModels ?? getModelIds);
   registerMcpRoutes(app, deps.db, {
     googleEnabled: !!(deps.appCfg.googleClientId && deps.appCfg.googleClientSecret),
   });

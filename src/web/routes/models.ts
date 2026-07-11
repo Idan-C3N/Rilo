@@ -8,19 +8,39 @@ const SAVED_FLASH: Record<string, Flash> = {
   key: { kind: 'ok', msg: 'OpenRouter key saved ✅' },
 };
 
-export function registerModelsRoutes(app: FastifyInstance, db: DB): void {
+function modelField(name: string, label: string, current: string, ids: string[]): string {
+  if (ids.length === 0) {
+    return `<label>${label}<input name="${name}" value="${esc(current)}"></label>`;
+  }
+  const opts = ids.includes(current) ? ids : [current, ...ids];
+  const options = opts
+    .map((id) => `<option value="${esc(id)}"${id === current ? ' selected' : ''}>${esc(id)}</option>`)
+    .join('');
+  return `<label>${label}<select name="${name}">${options}</select></label>`;
+}
+
+export function registerModelsRoutes(
+  app: FastifyInstance,
+  db: DB,
+  getModels: () => Promise<string[]>,
+): void {
   app.get<{ Querystring: { saved?: string } }>('/models', async (req, reply) => {
     const userId = (req as any).userId as number;
     const cfg = getConfig(db, userId);
     const hasKey = !!getOpenrouterKey(db, userId);
     const flash = req.query.saved ? SAVED_FLASH[req.query.saved] : undefined;
+    const ids = await getModels();
+    const note =
+      ids.length === 0
+        ? `<p class="muted">Couldn't load the model list — enter a slug manually.</p>`
+        : '';
     reply.type('text/html').send(
       layout(
         'Models',
-        `<div class="card"><h2>Models</h2>
+        `<div class="card"><h2>Models</h2>${note}
         <form method="post" action="/models">
-          <label>Cheap model<input name="cheap_model" value="${esc(cfg.cheap_model)}"></label>
-          <label>Strong model<input name="strong_model" value="${esc(cfg.strong_model)}"></label>
+          ${modelField('cheap_model', 'Cheap model', cfg.cheap_model, ids)}
+          ${modelField('strong_model', 'Strong model', cfg.strong_model, ids)}
           <button type="submit">Save models</button>
         </form></div>
         <div class="card"><h2>OpenRouter key</h2>
