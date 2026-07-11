@@ -1,0 +1,17 @@
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    env_file: ../../.env          # secrets: ENC_KEY, TELEGRAM_TOKEN, OPENROUTER_KEY, etc.
+    environment:
+      DB_PATH: /app/data/agent.db # override .env — must point at the volume
+      WEB_PORT: "8080"            # container always listens on 8080
+    ports:
+      - "${HOST_PORT:-8080}:8080" # change the host side via HOST_PORT, not WEB_PORT
+    volumes:
+      - agent-data:/app/data      # SQLite persistence across restarts
+    restart: unless-stopped
+
+volumes:
+  agent-data:

@@ -33,9 +33,9 @@ Copy `.env.example` to `.env` and fill in:
 1. Add your SSH key to Hetzner Cloud (Console → Security → SSH Keys) and note its name.
 2. Provision the server:
    ```bash
-   HCLOUD_TOKEN=xxx OWNER_IP=1.2.3.4/32 WEB_PORT=8080 SSH_KEY_NAME=mykey ./provisioning/provision.sh
+   HCLOUD_TOKEN=xxx OWNER_IP=1.2.3.4/32 WEB_PORT=8080 SSH_KEY_NAME=mykey ./deploy/hetzner/provision.sh
    ```
-   This creates a firewall (SSH + `WEB_PORT` open to `OWNER_IP` only, all outbound allowed) and a server booted with `provisioning/cloud-init.yaml` (installs Node 22, creates the `agent` user, creates `/opt/personal-agent`). Note the printed server IP.
+   This creates a firewall (SSH + `WEB_PORT` open to `OWNER_IP` only, all outbound allowed) and a server booted with `deploy/hetzner/cloud-init.yaml` (installs Node 22, creates the `agent` user, creates `/opt/personal-agent`). Note the printed server IP.
 3. Fill in `.env` locally (see fields above), including `WEB_BASE_URL` with the server IP.
 4. Copy `.env` to the server:
    ```bash
@@ -43,7 +43,7 @@ Copy `.env.example` to `.env` and fill in:
    ```
 5. Deploy the app:
    ```bash
-   SERVER_IP=<SERVER_IP> ./provisioning/deploy.sh
+   SERVER_IP=<SERVER_IP> ./deploy/hetzner/deploy.sh
    ```
    This rsyncs the repo, runs `npm ci`/installs `tsx`, installs the systemd unit, and starts `personal-agent.service`.
 6. Message your bot on Telegram (anything). This creates your user row, but it starts **not allowlisted** — the agent will refuse until you allowlist yourself.
@@ -59,16 +59,8 @@ Copy `.env.example` to `.env` and fill in:
 ### Operating notes
 
 - Logs: `ssh root@<SERVER_IP> journalctl -u personal-agent -f`
-- Redeploy after code changes: re-run `SERVER_IP=<SERVER_IP> ./provisioning/deploy.sh`.
+- Redeploy after code changes: re-run `SERVER_IP=<SERVER_IP> ./deploy/hetzner/deploy.sh`.
 - The UI/SSH are only reachable from `OWNER_IP` per the Hetzner firewall; if your IP changes, update the firewall rule in the Hetzner console (or re-run provisioning).
-
-#### This instance (live)
-
-- Server: Hetzner **cx23**, IP **`<SERVER_IP>`** (region nbg1). Firewall locks SSH + UI(8080) to the owner IP only.
-- SSH uses the dedicated key `~/.ssh/<SSH_KEY_NAME>` (a `Host <SERVER_IP>` block in `~/.ssh/config` wires it up), so `ssh root@<SERVER_IP>` and the deploy script work without `-i`.
-- Redeploy: `SERVER_IP=<SERVER_IP> ./provisioning/deploy.sh`
-- Logs: `ssh root@<SERVER_IP> journalctl -u personal-agent -f`
-- The **prod** Telegram bot token lives only in the server's `/opt/personal-agent/.env`; the local `.env` holds the **dev** bot token. `deploy.sh` excludes nothing env-related — it never copies local `.env`; update the server `.env` directly (see step 4) when secrets change.
 
 ## Connecting Google Workspace (Gmail + Calendar)
 

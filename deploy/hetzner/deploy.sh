@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: SERVER_IP=x.x.x.x ./provisioning/deploy.sh
+# Usage: SERVER_IP=x.x.x.x ./deploy/hetzner/deploy.sh
 # Rsyncs the repo to the VPS, installs deps, (re)starts the service.
 set -euo pipefail
 : "${SERVER_IP:?set SERVER_IP}"
@@ -13,7 +13,7 @@ ssh "${REMOTE}" bash -s <<'EOF'
 set -euo pipefail
 cd /opt/personal-agent
 npm ci --omit=dev || npm install --omit=dev   # tsx is a runtime dependency, pinned via package-lock
-cp provisioning/personal-agent.service /etc/systemd/system/personal-agent.service
+cp deploy/hetzner/personal-agent.service /etc/systemd/system/personal-agent.service
 chown -R agent:agent /opt/personal-agent
 systemctl daemon-reload
 systemctl enable personal-agent

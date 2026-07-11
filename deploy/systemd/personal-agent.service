@@ -1,0 +1,18 @@
+# Generic systemd unit for Rilo. Adjust WorkingDirectory, EnvironmentFile,
+# ExecStart paths, and User to match your install location and service user.
+[Unit]
+Description=Rilo personal agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/personal-agent
+EnvironmentFile=/opt/personal-agent/.env
+ExecStart=/usr/bin/node --env-file=/opt/personal-agent/.env --import tsx /opt/personal-agent/src/index.ts
+Restart=always
+RestartSec=3
+User=agent
+
+[Install]
+WantedBy=multi-user.target

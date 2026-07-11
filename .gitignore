@@ -4,3 +4,7 @@ dist/
 .env
 .superpowers/
 *.log
+
+# private per-instance ops notes (copy of instance.local.md.example)
+**/instance.local.md
+*.local.md
