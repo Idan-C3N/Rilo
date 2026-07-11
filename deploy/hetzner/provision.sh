@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage:
-#   HCLOUD_TOKEN=xxx OWNER_IP=1.2.3.4/32 WEB_PORT=8080 SSH_KEY_NAME=mykey ./provisioning/provision.sh
+#   HCLOUD_TOKEN=xxx OWNER_IP=1.2.3.4/32 WEB_PORT=8080 SSH_KEY_NAME=mykey ./deploy/hetzner/provision.sh
 # Creates a Hetzner Cloud server with cloud-init, plus a firewall that:
 #   - allows SSH (22) from OWNER_IP only
 #   - allows the UI port from OWNER_IP only
@@ -37,10 +37,10 @@ curl -sf "${auth[@]}" -X POST "${API}/servers" -d @- <<JSON | python3 -c 'import
   "location": "${LOCATION}",
   "ssh_keys": ["${SSH_KEY_NAME}"],
   "firewalls": [{"firewall": ${fw_id}}],
-  "user_data": $(python3 -c 'import json,sys;print(json.dumps(open("provisioning/cloud-init.yaml").read()))')
+  "user_data": $(python3 -c 'import json,sys;print(json.dumps(open("deploy/hetzner/cloud-init.yaml").read()))')
 }
 JSON
 
 echo "Server creating. Wait ~60s for cloud-init, then:"
 echo "  1) scp your filled .env to root@<IP>:/opt/personal-agent/.env"
-echo "  2) SERVER_IP=<IP> ./provisioning/deploy.sh"
+echo "  2) SERVER_IP=<IP> ./deploy/hetzner/deploy.sh"
