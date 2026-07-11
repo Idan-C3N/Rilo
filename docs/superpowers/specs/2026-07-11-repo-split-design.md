@@ -100,6 +100,40 @@ Framing text + a short decision list:
 
 This file is what workstream #6's setup-agent will read to present choices.
 
+## 1d. Management model — ONE public repo (no second repo, no private branch)
+
+The deploy tooling is generic and non-secret, so there is nothing to hide in a
+separate repo or branch. The management model is deliberately minimal:
+
+- **One public repo.** Code + deploy tooling are fully publishable.
+- **No private branch** — branches get pushed/merged/shown and would leak. Rejected.
+- **No second repo/fork** — overkill for a handful of runtime values, and drifts.
+- The private layer is a couple of **gitignored files on the author's laptop**,
+  plus the author's Claude memory (`rilo-deployment.md`).
+
+Day-to-day: edit code → commit → push public. `instance.local.md` and `.env` sit
+gitignored, invisible to git, used only when the author deploys. Adopters copy the
+`.example` templates to their own local files — identical to the existing
+`.env.example` → `.env` flow.
+
+### Store boundaries — what goes where
+
+The safety rule: **secrets → `.env` only; non-secret pointers → memory / `instance.local.md`.**
+
+| Store | Location | Contents | Read by |
+|---|---|---|---|
+| `.env` | machine that runs the app (prod server; laptop for dev); gitignored | Secrets the app needs at boot: `ENC_KEY`, `TELEGRAM_TOKEN`, `OPENROUTER_KEY`, `GOOGLE_CLIENT_ID/SECRET`, `TAVILY_API_KEY`, `WEB_PORT` | the app (`config.ts`) |
+| `instance.local.md` | author's laptop only; gitignored | Ops pointers to deploy/reach the server: IP, region, SSH key *name/path*, redeploy cmd, log cmd | author / agent |
+| Claude memory (`rilo-deployment.md`) | `~/.claude/…`, outside repo | Same ops pointers, for agent recall | agent |
+
+Consequences enforced by this boundary:
+- Prod Telegram token + `ENC_KEY` live in the server's `.env` only — never in memory or any `.md`.
+- The SSH **private key** is a `~/.ssh/` file — never in repo/memory; notes hold only its *name*.
+- The server IP is recon info, not a secret — fine as a pointer in memory / `instance.local.md`.
+
+No single point of failure and no secret in a notes file: the sensitive material
+(`.env` secrets, SSH key) was already isolated from the notes layer.
+
 ## 2. Private-details extraction
 
 The only author-specific content in the working tree is README.md's
@@ -120,7 +154,8 @@ region, SSH key path `~/.ssh/<SSH_KEY_NAME>`, redeploy/log commands, prod-bot no
 *.local.md
 ```
 
-`.env` and `data/` are already ignored; `data/agent.db` is confirmed untracked.
+`instance.local.md.example` ends in `.example`, matches neither pattern → stays
+committed. `.env` and `data/` are already ignored; `data/agent.db` is confirmed untracked.
 
 ## 3. Git-history scrub
 
