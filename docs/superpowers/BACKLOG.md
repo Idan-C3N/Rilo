@@ -1,6 +1,6 @@
 # Rilo Open-Source Backlog
 
-**Updated:** 2026-07-11
+**Updated:** 2026-07-12
 **Purpose:** Coordination doc for the remaining open-source workstreams — approach
 sketch, files touched, open decisions, and how to parallelize across agents.
 
@@ -12,9 +12,19 @@ sketch, files touched, open decisions, and how to parallelize across agents.
 
 - **#2 — Web UI** (design system, clean/minimal auto light-dark, Home dashboard, styled login + `/logout`, flash) — merged to `main`.
 - **#2-ext — OpenRouter model catalog** (live datalist model pickers; new-user defaults seeded by recency from the catalog; `DEFAULT_MODEL_FAMILY`) — merged.
-- **#4 — Repo split** (`deploy/` with Docker headline + Hetzner + systemd; private `instance.local.md`; history scrubbed; MIT license) — merged. *Not yet pushed to a public remote.*
+- **#4 — Repo split** (history scrubbed; MIT license) — merged. **Now public** (see below); the systemd/Hetzner split it introduced was later superseded by the single-Compose rework.
 - **#7 — docs decision** — superpowers specs are published (verified secret-free); a user-facing `docs/` grows with #5.
 - **#10 — htmx progressive enhancement** (vendored htmx; Services toggle/delete + Google connect/disconnect swap inline; JS-off fallback) — merged.
+- **#8 — pluggable search backends** (SearXNG bundled default + Google Custom Search opt-in + Tavily demoted to `SEARCH_BACKEND=tavily`; `selectSearchBackend` precedence) — merged + pushed. Spec + plan in `docs/superpowers/`.
+- **Deploy rework — single root Docker Compose** (retired systemd; `compose.yml`+`Dockerfile`+`searxng/` at root; bind-mount `./data`; `.env` for secrets, invariants baked into compose; `deploy/provision.sh`; git-pull redeploy) — merged + pushed. Spec: `2026-07-11-single-compose-deploy-design.md`.
+- **`dev` script fix** — `npm run dev` now loads `.env` (was crashing on missing `DB_PATH`) — pushed.
+- **Public repo** — pushed to `github.com/Idan-C3N/Rilo` (PUBLIC). History verified secret-clean; all commits re-identified to the personal `Idan-C3N <idanco32@gmail.com>` (work identity scrubbed off).
+
+## New follow-ups (from the deploy/OSS session)
+
+- **Live-box migration** — the Hetzner VPS still runs the **old systemd** setup. Migrate it to Compose using the DB-backup-first sequence in the single-compose spec. Until then the `rilo-deployment` memory's redeploy command (`deploy.sh` + systemd) is still what the live box uses.
+- **Pin the SearXNG image** — `compose.yml` uses `searxng/searxng:latest`; pin a tag before trusting it in prod.
+- **README quickstart** — the public repo's root README still predates all this (folded into #5).
 
 ## File-contention map (why parallelism is limited)
 
@@ -32,16 +42,19 @@ touch them → they must **serialize** among themselves. #8 is isolated.
 
 ## Recommended parallelization
 
-- **Wave 1 (parallel):** **#8** (own agent, isolated) ∥ **#1** (own agent; large, mostly new files + server/mcp routes).
+- ~~**Wave 1 (parallel):** **#8** ∥ **#1**~~ — **done**: #8 merged; #1 built on its branch (merge pending). Deploy rework + public push also landed.
 - **Wave 2 (serialize — same files):** **#9**, then **#11**. (Consider merging them into one "auth & onboarding" workstream since both rewrite the login/dispatch path.)
-- **Wave 3 (last):** **#5 README** (needs #1 + #8 landed), then **#3 security** (audits the finished code).
+- **Wave 3:** **#5 README** (#8 done; needs #1 merged), then **#3 security**.
+- **⚠️ re-prioritize:** the repo is now **public**, so **#3 security** is no longer safely "last" — the un-audited auth surface is exposed. Do it soon, independent of the waves.
 
 Each agent should work on its **own branch** off `main` and merge back when its
 workstream's final review passes (same subagent-driven flow used so far).
 
 ---
 
-## #8 — Tavily → Google Search  ·  effort: S  ·  isolated
+## #8 — pluggable search backends  ·  ✅ DONE (merged + pushed)
+
+**Shipped:** SearXNG bundled default + Google Custom Search opt-in + Tavily demoted (`SEARCH_BACKEND=tavily`), behind `selectSearchBackend` precedence. Design landed differently from the sketch below (SearXNG default, not Google) — see `docs/superpowers/specs/2026-07-11-websearch-backends-design.md`. Original sketch kept below for history.
 
 **Goal:** Let web search use Google Programmable Search (Custom Search JSON API) instead of / alongside Tavily.
 
@@ -57,7 +70,9 @@ workstream's final review passes (same subagent-driven flow used so far).
 
 ---
 
-## #1 — Easier connections: real OAuth (Google + Slack)  ·  effort: L  ·  needs brainstorm
+## #1 — Easier connections: real OAuth (Google)  ·  🟡 BUILT, not merged
+
+**Status:** brainstormed → spec (`2026-07-11-google-web-oauth-design.md`) → built + self-reviewed on branch `feat/1-google-web-oauth`. **Not merged to `main`.** Scope narrowed in brainstorm: **Google only** (opt-in via `ENABLE_WEB_OAUTH`, default off; loopback/paste kept as the firewalled fallback; signed-cookie CSRF `state`). **Slack stays token-paste** (deferred). Merge when ready.
 
 **Goal:** Replace manual token-paste with a real "Connect" → provider consent → callback flow.
 
@@ -154,9 +169,11 @@ workstream's final review passes (same subagent-driven flow used so far).
 
 ---
 
-## Suggested sequencing (copy for scheduling agents)
+## Suggested sequencing (updated)
 
-1. **Now, in parallel:** agent-A → **#8** ; agent-B → **#1** (brainstorm decisions first).
-2. **After #1 merges:** agent-B → **#9**, then **#11** (or combine).
-3. **After #1 + #8 merge:** **#5 README**.
-4. **Last:** **#3 security** pass, then push the public repo (the #4 scrub is done; create the GitHub remote + `git push`).
+1. ~~#8 ∥ #1~~ — done (#8 merged; #1 on branch). Public repo already pushed.
+2. **Merge #1** to `main` (independent; disjoint from the deploy/search work).
+3. **#3 security pass** — pressing now that the repo is public. Audit sessions/CSRF/rate-limit/deps/error-leak; fix; test.
+4. **#9** onboarding, then **#11** magic-link (or combine) — serialize (both touch `dispatch.ts`/login).
+5. **#5 README** rewrite (reflect #8 SearXNG default, single-Compose deploy, #1 outcome).
+6. **Live-box migration** systemd → Compose (when convenient; DB-backup first).
