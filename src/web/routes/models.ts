@@ -24,7 +24,7 @@ export function registerModelsRoutes(app: FastifyInstance, db: DB): void {
           <button type="submit">Save models</button>
         </form></div>
         <div class="card"><h2>OpenRouter key</h2>
-        <p>${hasKey ? 'Key is set ✅' : 'No key set ❌'}</p>
+        <p class="muted">${hasKey ? 'Your key is set ✅' : 'No personal key yet — the instance key is used as a fallback.'}</p>
         <form method="post" action="/openrouter-key">
           <label>API key<input name="key" type="password" placeholder="sk-or-..."></label>
           <button type="submit">Save key</button>
