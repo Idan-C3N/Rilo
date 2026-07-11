@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
 import { createUserWithIdentity, setAllowlisted, getUserByIdentity } from '../../src/db/users.js';
-import { setOpenrouterKey } from '../../src/db/config.js';
+import { setOpenrouterKey, getConfig } from '../../src/db/config.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { handleInbound, NOT_AUTHORIZED } from '../../src/agent/dispatch.js';
 import { runAgentTurn } from '../../src/agent/core.js';
@@ -71,5 +71,29 @@ describe('handleInbound', () => {
     expect(modelCalled).toBe(false);
     expect(sent[0][1]).toMatch(/http:\/\/host:8080\/login\?token=/);
     expect(sent[0][1]).toMatch(/\d{6}/);
+  });
+
+  describe('seeding new user defaults', () => {
+    it('seeds a new user\'s models from resolveDefaultModels', async () => {
+      const d = {
+        ...deps(),
+        resolveDefaultModels: async () => ({ cheap_model: 'anthropic/x-cheap', strong_model: 'anthropic/x-strong' }),
+      };
+      await handleInbound(d as any, { channel: 'telegram', channelUserId: 'newuser1', text: 'hello', name: 'NewUser' });
+      const uid = getUserByIdentity(db, 'telegram', 'newuser1')!.id;
+      expect(getConfig(db, uid).cheap_model).toBe('anthropic/x-cheap');
+      expect(getConfig(db, uid).strong_model).toBe('anthropic/x-strong');
+    });
+
+    it('keeps SQL defaults when resolveDefaultModels returns undefined', async () => {
+      const d = {
+        ...deps(),
+        resolveDefaultModels: async () => undefined,
+      };
+      await handleInbound(d as any, { channel: 'telegram', channelUserId: 'newuser2', text: 'hello', name: 'NewUser' });
+      const uid = getUserByIdentity(db, 'telegram', 'newuser2')!.id;
+      expect(getConfig(db, uid).cheap_model).toBe('anthropic/claude-haiku-4.5');
+      expect(getConfig(db, uid).strong_model).toBe('anthropic/claude-sonnet-5');
+    });
   });
 });

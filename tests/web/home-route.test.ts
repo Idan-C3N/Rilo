@@ -4,7 +4,6 @@ import { openDb, type DB } from '../../src/db/db.js';
 import { createUserWithIdentity } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { startLogin, verifyCode } from '../../src/db/sessions.js';
-import { getConfig } from '../../src/db/config.js';
 import { buildWebApp } from '../../src/web/server.js';
 
 let db: DB, uid: number, app: any, cookie: string;
@@ -21,19 +20,33 @@ beforeEach(async () => {
   app = await buildWebApp({ db, appCfg: {} as any, getModels: async () => ['anthropic/claude-haiku-4.5', 'anthropic/claude-sonnet-5'] });
 });
 
-describe('models route', () => {
-  it('redirects unauthenticated users to /login', async () => {
-    const res = await app.inject({ method: 'GET', url: '/' });
-    expect(res.statusCode).toBe(302);
-    expect(res.headers.location).toBe('/login');
+describe('home dashboard + models relocation', () => {
+  it('authed GET / renders the getting-started checklist', async () => {
+    const res = await app.inject({ method: 'GET', url: '/', headers: { cookie } });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('Getting started');
+    expect(res.body).toContain('OpenRouter key');
+    expect(res.body).toContain('Services');
   });
 
-  it('updates the strong model for an authenticated user', async () => {
+  it('GET /models renders the model config screen', async () => {
+    const res = await app.inject({ method: 'GET', url: '/models', headers: { cookie } });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('Cheap model');
+    expect(res.body).toContain('Strong model');
+  });
+
+  it('POST /models redirects with a saved flash param', async () => {
     const res = await app.inject({
       method: 'POST', url: '/models', headers: { cookie },
-      payload: { strong_model: 'anthropic/claude-3.7-sonnet', cheap_model: 'anthropic/claude-3.5-haiku' },
+      payload: { cheap_model: 'a/b', strong_model: 'c/d' },
     });
     expect(res.statusCode).toBe(302);
-    expect(getConfig(db, uid).strong_model).toBe('anthropic/claude-3.7-sonnet');
+    expect(res.headers.location).toBe('/models?saved=models');
+  });
+
+  it('GET /models?saved=models shows a success flash', async () => {
+    const res = await app.inject({ method: 'GET', url: '/models?saved=models', headers: { cookie } });
+    expect(res.body).toContain('flash-ok');
   });
 });

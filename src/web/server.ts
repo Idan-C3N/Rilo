@@ -5,13 +5,16 @@ import type { DB } from '../db/db.js';
 import type { AppConfig } from '../config.js';
 import { sessionUserId } from './auth.js';
 import { verifyCode } from '../db/sessions.js';
+import { registerHomeRoutes } from './routes/home.js';
 import { registerModelsRoutes } from './routes/models.js';
 import { registerMcpRoutes } from './routes/mcp.js';
-import { layout } from './render.js';
+import { layout, flash } from './render.js';
+import { getModelIds } from '../openrouter/catalog.js';
 
 export interface WebDeps {
   db: DB;
   appCfg: Pick<AppConfig, 'openrouterKeyFallback' | 'googleClientId' | 'googleClientSecret'>;
+  getModels?: () => Promise<string[]>;
 }
 
 const PUBLIC_PATHS = new Set(['/login']);
@@ -39,10 +42,12 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
       layout(
         'Login',
         `<div class="card"><h2>Enter your code</h2>
+        <p class="muted">Enter the 6-digit code Rilo sent you.</p>
         <form method="post" action="/login">
-          <label>6-digit code<input name="code" inputmode="numeric" pattern="[0-9]{6}"></label>
+          <label>6-digit code<input name="code" inputmode="numeric" pattern="[0-9]{6}" autofocus></label>
           <button type="submit">Verify</button>
         </form></div>`,
+        { bare: true },
       ),
     );
   });
@@ -52,11 +57,27 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
     if (token && verifyCode(deps.db, token, req.body.code)) {
       reply.redirect('/');
     } else {
-      reply.type('text/html').send(layout('Login', '<p>Invalid or expired code. <a href="/login">Try again</a></p>'));
+      reply.type('text/html').send(
+        layout(
+          'Login',
+          `<div class="card">${flash('error', 'Invalid or expired code.')}
+          <a href="/login">Try again</a></div>`,
+          { bare: true },
+        ),
+      );
     }
   });
 
-  registerModelsRoutes(app, deps.db);
+  app.get('/logout', async (_req, reply) => {
+    reply.clearCookie('token', { path: '/' });
+    reply.redirect('/login');
+  });
+
+  registerHomeRoutes(app, deps.db, {
+    googleEnabled: !!(deps.appCfg.googleClientId && deps.appCfg.googleClientSecret),
+    hasOpenrouterFallback: !!deps.appCfg.openrouterKeyFallback,
+  });
+  registerModelsRoutes(app, deps.db, deps.getModels ?? getModelIds);
   registerMcpRoutes(app, deps.db, {
     googleEnabled: !!(deps.appCfg.googleClientId && deps.appCfg.googleClientSecret),
   });
