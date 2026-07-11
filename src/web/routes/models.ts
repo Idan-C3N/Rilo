@@ -8,15 +8,18 @@ const SAVED_FLASH: Record<string, Flash> = {
   key: { kind: 'ok', msg: 'OpenRouter key saved ✅' },
 };
 
-function modelField(name: string, label: string, current: string, ids: string[]): string {
-  if (ids.length === 0) {
-    return `<label>${label}<input name="${name}" value="${esc(current)}"></label>`;
-  }
-  const opts = ids.includes(current) ? ids : [current, ...ids];
-  const options = opts
-    .map((id) => `<option value="${esc(id)}"${id === current ? ' selected' : ''}>${esc(id)}</option>`)
-    .join('');
-  return `<label>${label}<select name="${name}">${options}</select></label>`;
+// Autocomplete field: a plain text input backed by a shared <datalist> of catalog
+// ids. Type-ahead filters the suggestions, but any value is still accepted (so a
+// slug the catalog doesn't list, or a deprecated stored value, always works). When
+// the catalog is empty the input simply has no suggestion list.
+function modelField(name: string, label: string, current: string, hasList: boolean): string {
+  const list = hasList ? ' list="model-list" autocomplete="off"' : '';
+  return `<label>${label}<input name="${name}" value="${esc(current)}"${list}></label>`;
+}
+
+function modelDatalist(ids: string[]): string {
+  if (ids.length === 0) return '';
+  return `<datalist id="model-list">${ids.map((id) => `<option value="${esc(id)}"></option>`).join('')}</datalist>`;
 }
 
 export function registerModelsRoutes(
@@ -39,8 +42,9 @@ export function registerModelsRoutes(
         'Models',
         `<div class="card"><h2>Models</h2>${note}
         <form method="post" action="/models">
-          ${modelField('cheap_model', 'Cheap model', cfg.cheap_model, ids)}
-          ${modelField('strong_model', 'Strong model', cfg.strong_model, ids)}
+          ${modelField('cheap_model', 'Cheap model', cfg.cheap_model, ids.length > 0)}
+          ${modelField('strong_model', 'Strong model', cfg.strong_model, ids.length > 0)}
+          ${modelDatalist(ids)}
           <button type="submit">Save models</button>
         </form></div>
         <div class="card"><h2>OpenRouter key</h2>

@@ -22,26 +22,29 @@ beforeEach(async () => {
 
 const IDS = ['anthropic/claude-haiku-4.5', 'anthropic/claude-sonnet-5'];
 
-describe('models <select>', () => {
-  it('renders selects populated from the catalog with the current value selected', async () => {
+describe('models autocomplete (datalist)', () => {
+  it('renders inputs bound to a datalist of catalog ids, current value in the input', async () => {
     setModels(db, uid, { cheap_model: 'anthropic/claude-haiku-4.5', strong_model: 'anthropic/claude-sonnet-5' });
     const app = await buildWebApp({ db, appCfg: {} as any, getModels: async () => IDS });
     const res = await app.inject({ method: 'GET', url: '/models', headers: { cookie } });
-    expect(res.body).toContain('<select name="cheap_model">');
-    expect(res.body).toContain('<option value="anthropic/claude-haiku-4.5" selected>');
+    expect(res.body).toContain('<input name="cheap_model" value="anthropic/claude-haiku-4.5" list="model-list"');
+    expect(res.body).toContain('<datalist id="model-list">');
+    expect(res.body).toContain('<option value="anthropic/claude-sonnet-5"></option>');
   });
 
-  it('keeps a stored value not in the catalog by prepending it, still selected', async () => {
+  it('keeps a stored value not in the catalog (input value), datalist is just suggestions', async () => {
     setModels(db, uid, { cheap_model: 'anthropic/deprecated-old', strong_model: 'anthropic/claude-sonnet-5' });
     const app = await buildWebApp({ db, appCfg: {} as any, getModels: async () => IDS });
     const res = await app.inject({ method: 'GET', url: '/models', headers: { cookie } });
-    expect(res.body).toContain('<option value="anthropic/deprecated-old" selected>');
+    expect(res.body).toContain('<input name="cheap_model" value="anthropic/deprecated-old" list="model-list"');
   });
 
-  it('falls back to free-text inputs when the catalog is empty', async () => {
+  it('falls back to bare inputs (no datalist) when the catalog is empty', async () => {
     const app = await buildWebApp({ db, appCfg: {} as any, getModels: async () => [] });
     const res = await app.inject({ method: 'GET', url: '/models', headers: { cookie } });
-    expect(res.body).toContain('<input name="cheap_model"');
+    expect(res.body).toContain('<input name="cheap_model" value=');
+    expect(res.body).not.toContain('list="model-list"');
+    expect(res.body).not.toContain('<datalist');
     expect(res.body).toContain("Couldn't load the model list");
   });
 });
