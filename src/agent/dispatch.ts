@@ -33,8 +33,14 @@ export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Prom
       name: m.name,
       heartbeat_interval_min: deps.heartbeatDefaultMin,
     });
-    const seeded = await deps.resolveDefaultModels?.();
-    if (seeded) setModels(db, user.id, seeded);
+    // Best-effort: seed model defaults from the live catalog. Never let a
+    // catalog failure break onboarding — the SQL defaults stand if it throws.
+    try {
+      const seeded = await deps.resolveDefaultModels?.();
+      if (seeded) setModels(db, user.id, seeded);
+    } catch {
+      // ignore — SQL column defaults remain
+    }
   }
   if (!isAllowlisted(db, user.id)) {
     await deps.adapter.send(m.channelUserId, NOT_AUTHORIZED);
