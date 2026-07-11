@@ -90,6 +90,25 @@ describe('google connect flow', () => {
     const res = await app.inject({ method: 'GET', url: '/mcp', headers: { cookie } });
     expect(res.body).not.toContain('Google Workspace');
   });
+
+  it('shows the paste form when ENABLE_WEB_OAUTH is off (default)', async () => {
+    const gApp = await buildWebApp({ db, appCfg: { googleClientId: 'c', googleClientSecret: 's' } as any });
+    const res = await gApp.inject({ method: 'GET', url: '/mcp', headers: { cookie } });
+    expect(res.body).toContain('Connect Google'); // paste form submit button
+    expect(res.body).toContain('name="refresh_token"');
+    expect(res.body).not.toContain('/oauth/google/start');
+  });
+
+  it('shows a Connect-with-Google link (no paste form) when ENABLE_WEB_OAUTH is on', async () => {
+    const gApp = await buildWebApp({
+      db,
+      appCfg: { googleClientId: 'c', googleClientSecret: 's', enableWebOauth: true, webBaseUrl: 'https://rilo.example' } as any,
+    });
+    const res = await gApp.inject({ method: 'GET', url: '/mcp', headers: { cookie } });
+    expect(res.body).toContain('/oauth/google/start');
+    expect(res.body).toContain('Connect with Google');
+    expect(res.body).not.toContain('name="refresh_token"');
+  });
 });
 
 describe('mcp route', () => {
@@ -142,6 +161,17 @@ describe('services screen chrome', () => {
   it('renders a saved flash on /mcp?saved=connected', async () => {
     const res = await app.inject({ method: 'GET', url: '/mcp?saved=connected', headers: { cookie } });
     expect(res.body).toContain('flash-ok');
+  });
+
+  it('renders an error flash from /mcp?error=... (escaped) for the OAuth failure path', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/mcp?error=${encodeURIComponent('Authorization could not be verified. <b>x</b>')}`,
+      headers: { cookie },
+    });
+    expect(res.body).toContain('flash-error');
+    expect(res.body).toContain('Authorization could not be verified.');
+    expect(res.body).not.toContain('<b>x</b>'); // escaped, not raw HTML
   });
 });
 

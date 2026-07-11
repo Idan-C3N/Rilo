@@ -1,7 +1,9 @@
 /**
- * One-time Google OAuth loopback helper. Run it locally to obtain a refresh
+ * One-time Google OAuth loopback helper. This is the fallback used when
+ * ENABLE_WEB_OAUTH is off (the default) — run it locally to obtain a refresh
  * token to paste into Rilo (Services → Connect Google). Keeps the VPS
- * firewall-only — no public callback needed.
+ * firewall-only — no public callback needed. (With ENABLE_WEB_OAUTH=true the
+ * Services page instead offers a one-click "Connect with Google" button.)
  *
  * Usage (from the repo root, with GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in .env):
  *   node --env-file=.env --import tsx scripts/google-auth.ts

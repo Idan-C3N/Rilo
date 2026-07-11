@@ -65,9 +65,23 @@ Rilo expects to sit behind a host firewall. On Hetzner, create a Cloud Firewall
 
 SearXNG is never published to the host, so it needs no firewall rule.
 
-> If you expose the web UI publicly (e.g. for `ENABLE_WEB_OAUTH` — real Google
-> OAuth), front the app with an HTTPS reverse proxy and set `WEB_BASE_URL` to the
-> public URL. That is a deliberate departure from the firewall-only model.
+## Optional: one-click "Connect with Google" (public OAuth)
+
+By default Rilo connects Google via the firewall-friendly loopback/paste flow
+(`scripts/google-auth.ts`) and needs no inbound access. If instead you expose
+Rilo on a **public HTTPS URL** and want a one-click **Connect with Google**
+button, set `ENABLE_WEB_OAUTH=true`. This requires:
+
+- A public, HTTPS `WEB_BASE_URL` (terminate TLS at a reverse proxy such as
+  Caddy or nginx in front of the app — Rilo itself serves plain HTTP). This is
+  documentation only; firewalled installs are unaffected and need no proxy.
+- A Google Cloud OAuth client of type **Web application** whose authorized
+  redirect URI is `$WEB_BASE_URL/oauth/google/callback`.
+- Publish the OAuth consent screen to **Production** (unverified is fine for a
+  few users — they click through the "unverified app" warning). In *Testing*
+  mode Google expires refresh tokens after 7 days, which breaks the connection.
+
+Leave `ENABLE_WEB_OAUTH` unset (default `false`) to keep the loopback/paste flow.
 
 ---
 

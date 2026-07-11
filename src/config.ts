@@ -13,6 +13,7 @@ export interface AppConfig {
   searchBackend?: string;
   googleClientId?: string;
   googleClientSecret?: string;
+  enableWebOauth: boolean;
   defaultModelFamily: string;
 }
 
@@ -39,6 +40,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
     searchBackend: env.SEARCH_BACKEND || undefined,
     googleClientId: env.GOOGLE_CLIENT_ID || undefined,
     googleClientSecret: env.GOOGLE_CLIENT_SECRET || undefined,
+    enableWebOauth: env.ENABLE_WEB_OAUTH === 'true',
     defaultModelFamily: env.DEFAULT_MODEL_FAMILY || 'anthropic/',
   };
 }

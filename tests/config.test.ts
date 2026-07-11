@@ -26,4 +26,10 @@ describe('loadConfig', () => {
     expect(loadConfig(base as any).defaultModelFamily).toBe('anthropic/');
     expect(loadConfig({ ...base, DEFAULT_MODEL_FAMILY: 'openai/' } as any).defaultModelFamily).toBe('openai/');
   });
+
+  it('enableWebOauth defaults to false and is true only for the exact string "true"', () => {
+    expect(loadConfig(base as any).enableWebOauth).toBe(false);
+    expect(loadConfig({ ...base, ENABLE_WEB_OAUTH: 'true' } as any).enableWebOauth).toBe(true);
+    expect(loadConfig({ ...base, ENABLE_WEB_OAUTH: '1' } as any).enableWebOauth).toBe(false);
+  });
 });
