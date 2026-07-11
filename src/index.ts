@@ -10,6 +10,7 @@ import { maybeSummarize } from './agent/summarize.js';
 import { startScheduler } from './scheduler/scheduler.js';
 import { fireReminder } from './scheduler/fire.js';
 import { buildToolsFor } from './agent/tools/index.js';
+import { selectSearchBackend } from './agent/tools/websearch.js';
 import { fireHeartbeat, seedHeartbeats } from './scheduler/heartbeat.js';
 import { startWeb } from './web/server.js';
 import { resolveDefaultModels } from './openrouter/catalog.js';
@@ -33,8 +34,9 @@ const google =
   appCfg.googleClientId && appCfg.googleClientSecret
     ? { clientId: appCfg.googleClientId, clientSecret: appCfg.googleClientSecret }
     : undefined;
+const search = selectSearchBackend(appCfg);
 const buildTools = (userId: number) =>
-  buildToolsFor({ db, userId, webSearchKey: appCfg.tavilyApiKey, google });
+  buildToolsFor({ db, userId, search, google });
 
 adapter.onMessage((m) =>
   handleInbound(

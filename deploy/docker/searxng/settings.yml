@@ -1,0 +1,17 @@
+# Minimal SearXNG config for Rilo's bundled web-search backend.
+# Only the JSON format needs enabling — Rilo queries /search?format=json.
+# Change `secret_key` before exposing SearXNG to any untrusted network.
+use_default_settings: true
+
+server:
+  # Not a real secret for the bundled default (SearXNG is internal-only, not
+  # host-published). Override via SEARXNG_SECRET / regenerate for public deploys.
+  secret_key: "change-me-rilo-searxng-secret"
+  limiter: false
+  image_proxy: false
+
+search:
+  # `json` is required by Rilo's searxngSearch backend; `html` keeps the UI usable.
+  formats:
+    - html
+    - json

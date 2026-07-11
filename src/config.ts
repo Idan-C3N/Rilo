@@ -7,6 +7,10 @@ export interface AppConfig {
   webBaseUrl: string;
   heartbeatDefaultMin: number;
   tavilyApiKey?: string;
+  searxngUrl: string;
+  googleSearchKey?: string;
+  googleSearchCx?: string;
+  searchBackend?: string;
   googleClientId?: string;
   googleClientSecret?: string;
   defaultModelFamily: string;
@@ -29,6 +33,10 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
     webBaseUrl: env.WEB_BASE_URL || `http://localhost:${webPort}`,
     heartbeatDefaultMin: Number(env.HEARTBEAT_DEFAULT_MIN ?? '30'),
     tavilyApiKey: env.TAVILY_API_KEY || undefined,
+    searxngUrl: env.SEARXNG_URL || 'http://searxng:8080',
+    googleSearchKey: env.GOOGLE_SEARCH_KEY || undefined,
+    googleSearchCx: env.GOOGLE_SEARCH_CX || undefined,
+    searchBackend: env.SEARCH_BACKEND || undefined,
     googleClientId: env.GOOGLE_CLIENT_ID || undefined,
     googleClientSecret: env.GOOGLE_CLIENT_SECRET || undefined,
     defaultModelFamily: env.DEFAULT_MODEL_FAMILY || 'anthropic/',
