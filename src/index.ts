@@ -12,6 +12,7 @@ import { fireReminder } from './scheduler/fire.js';
 import { buildToolsFor } from './agent/tools/index.js';
 import { fireHeartbeat, seedHeartbeats } from './scheduler/heartbeat.js';
 import { startWeb } from './web/server.js';
+import { resolveDefaultModels } from './openrouter/catalog.js';
 
 const appCfg = loadConfig(process.env);
 await initCrypto(appCfg.encKey);
@@ -47,6 +48,7 @@ adapter.onMessage((m) =>
       heartbeatDefaultMin: appCfg.heartbeatDefaultMin,
       maybeSummarize,
       webBaseUrl: appCfg.webBaseUrl,
+      resolveDefaultModels: () => resolveDefaultModels(appCfg.defaultModelFamily),
     },
     m,
   ),

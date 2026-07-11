@@ -3,6 +3,7 @@ import type { AppConfig } from '../config.js';
 import type { InboundMessage, ChannelAdapter, TypingController } from '../channels/adapter.js';
 import { getUserByIdentity, createUserWithIdentity, isAllowlisted } from '../db/users.js';
 import { startLogin } from '../db/sessions.js';
+import { setModels } from '../db/config.js';
 import type { runAgentTurn, GenerateFn } from './core.js';
 import { maybeSummarize } from './summarize.js';
 
@@ -19,6 +20,7 @@ export interface DispatchDeps {
   heartbeatDefaultMin: number;
   maybeSummarize?: typeof maybeSummarize;
   webBaseUrl: string;
+  resolveDefaultModels?: () => Promise<{ cheap_model: string; strong_model: string } | undefined>;
 }
 
 export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Promise<void> {
@@ -31,6 +33,8 @@ export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Prom
       name: m.name,
       heartbeat_interval_min: deps.heartbeatDefaultMin,
     });
+    const seeded = await deps.resolveDefaultModels?.();
+    if (seeded) setModels(db, user.id, seeded);
   }
   if (!isAllowlisted(db, user.id)) {
     await deps.adapter.send(m.channelUserId, NOT_AUTHORIZED);

@@ -9,6 +9,7 @@ export interface AppConfig {
   tavilyApiKey?: string;
   googleClientId?: string;
   googleClientSecret?: string;
+  defaultModelFamily: string;
 }
 
 function req(env: NodeJS.ProcessEnv, key: string): string {
@@ -30,5 +31,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
     tavilyApiKey: env.TAVILY_API_KEY || undefined,
     googleClientId: env.GOOGLE_CLIENT_ID || undefined,
     googleClientSecret: env.GOOGLE_CLIENT_SECRET || undefined,
+    defaultModelFamily: env.DEFAULT_MODEL_FAMILY || 'anthropic/',
   };
 }

@@ -21,4 +21,9 @@ describe('loadConfig', () => {
     const { TELEGRAM_TOKEN, ...missing } = base;
     expect(() => loadConfig(missing as any)).toThrow(/TELEGRAM_TOKEN/);
   });
+
+  it('defaults model family to anthropic/ and honors override', () => {
+    expect(loadConfig(base as any).defaultModelFamily).toBe('anthropic/');
+    expect(loadConfig({ ...base, DEFAULT_MODEL_FAMILY: 'openai/' } as any).defaultModelFamily).toBe('openai/');
+  });
 });
