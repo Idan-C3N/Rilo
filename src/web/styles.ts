@@ -49,6 +49,7 @@ form{margin:0}
 .muted{color:var(--muted)}
 .status-row{display:flex;align-items:center;gap:.5rem;padding:.7rem 0;border-bottom:1px solid var(--border)}
 .status-row:last-child{border-bottom:0}
+.status-row .label{font-weight:600}
 .status-row .spacer{margin-left:auto}
 .empty{text-align:center;color:var(--muted);padding:2rem 1rem}
 code{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.1rem .35rem;font-size:.85em}

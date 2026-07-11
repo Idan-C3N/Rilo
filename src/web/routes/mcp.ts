@@ -9,7 +9,7 @@ import { layout, esc, type Flash } from '../render.js';
 function renderGoogleConnected(db: DB, userId: number, enabled: boolean): string {
   if (!enabled || !hasOAuthToken(db, userId, 'google')) return '';
   return `<div class="card"><b>📧 Google Workspace</b> — connected ✅ (Gmail + Calendar)
-    <form method="post" action="/google/disconnect"><button>Disconnect</button></form></div>`;
+    <form method="post" action="/google/disconnect"><button class="btn-secondary">Disconnect</button></form></div>`;
 }
 
 /** Google card when NOT connected (shown under "Connect a service"). Empty otherwise. */
