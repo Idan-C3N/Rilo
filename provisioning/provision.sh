@@ -9,7 +9,7 @@ set -euo pipefail
 : "${HCLOUD_TOKEN:?}" ; : "${OWNER_IP:?e.g. 1.2.3.4/32}" ; : "${SSH_KEY_NAME:?}"
 WEB_PORT="${WEB_PORT:-8080}"
 SERVER_NAME="${SERVER_NAME:-personal-agent}"
-SERVER_TYPE="${SERVER_TYPE:-cx22}"   # smallest shared-vCPU tier
+SERVER_TYPE="${SERVER_TYPE:-cx23}"   # smallest current shared-vCPU tier (cx22 deprecated)
 IMAGE="${IMAGE:-ubuntu-24.04}"
 LOCATION="${LOCATION:-nbg1}"
 API="https://api.hetzner.cloud/v1"

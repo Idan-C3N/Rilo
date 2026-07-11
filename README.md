@@ -62,6 +62,14 @@ Copy `.env.example` to `.env` and fill in:
 - Redeploy after code changes: re-run `SERVER_IP=<SERVER_IP> ./provisioning/deploy.sh`.
 - The UI/SSH are only reachable from `OWNER_IP` per the Hetzner firewall; if your IP changes, update the firewall rule in the Hetzner console (or re-run provisioning).
 
+#### This instance (live)
+
+- Server: Hetzner **cx23**, IP **`<SERVER_IP>`** (region nbg1). Firewall locks SSH + UI(8080) to the owner IP only.
+- SSH uses the dedicated key `~/.ssh/<SSH_KEY_NAME>` (a `Host <SERVER_IP>` block in `~/.ssh/config` wires it up), so `ssh root@<SERVER_IP>` and the deploy script work without `-i`.
+- Redeploy: `SERVER_IP=<SERVER_IP> ./provisioning/deploy.sh`
+- Logs: `ssh root@<SERVER_IP> journalctl -u personal-agent -f`
+- The **prod** Telegram bot token lives only in the server's `/opt/personal-agent/.env`; the local `.env` holds the **dev** bot token. `deploy.sh` excludes nothing env-related — it never copies local `.env`; update the server `.env` directly (see step 4) when secrets change.
+
 ## Connecting Google Workspace (Gmail + Calendar)
 
 Rilo talks to Google with **native tools** using a per-user OAuth refresh token

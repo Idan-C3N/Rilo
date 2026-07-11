@@ -6,7 +6,7 @@ set -euo pipefail
 REMOTE="root@${SERVER_IP}"
 
 rsync -az --delete \
-  --exclude node_modules --exclude data --exclude .git \
+  --exclude node_modules --exclude data --exclude .git --exclude .env \
   ./ "${REMOTE}:/opt/personal-agent/"
 
 ssh "${REMOTE}" bash -s <<'EOF'

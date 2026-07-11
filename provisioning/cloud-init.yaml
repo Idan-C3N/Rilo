@@ -8,7 +8,7 @@ packages:
 users:
   - name: agent
     shell: /bin/bash
-    sudo: false
+    sudo: null
 runcmd:
   - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   - apt-get install -y nodejs
