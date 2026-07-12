@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { DB } from '../db/db.js';
 import type { AppConfig } from '../config.js';
@@ -9,23 +10,41 @@ import { verifyCode } from '../db/sessions.js';
 import { registerHomeRoutes } from './routes/home.js';
 import { registerModelsRoutes } from './routes/models.js';
 import { registerMcpRoutes } from './routes/mcp.js';
+import { registerOauthRoutes, type MakeOauthClient } from './routes/oauth.js';
 import { layout, flash } from './render.js';
 import { getModelIds } from '../openrouter/catalog.js';
 
 export interface WebDeps {
   db: DB;
-  appCfg: Pick<AppConfig, 'openrouterKeyFallback' | 'googleClientId' | 'googleClientSecret'>;
+  appCfg: Pick<
+    AppConfig,
+    | 'openrouterKeyFallback'
+    | 'googleClientId'
+    | 'googleClientSecret'
+    | 'enableWebOauth'
+    | 'webBaseUrl'
+    | 'encKey'
+  >;
   getModels?: () => Promise<string[]>;
+  /** Injectable OAuth client factory (tests stub the token exchange). */
+  makeOauthClient?: MakeOauthClient;
 }
 
 // Vendored htmx, read once at startup and served from memory (no build step).
 const HTMX_JS = readFileSync(new URL('./vendor/htmx.min.js', import.meta.url), 'utf8');
 
-const PUBLIC_PATHS = new Set(['/login', '/vendor/htmx.min.js']);
+const PUBLIC_PATHS = new Set(['/login', '/vendor/htmx.min.js', '/oauth/google/callback']);
 
 export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
   const app = Fastify();
-  await app.register(cookie);
+  // Secret enables signed cookies (the OAuth `state` cookie). Derive a
+  // domain-separated signing key from ENC_KEY rather than reusing the raw
+  // encryption key for a second purpose. Harmless when absent (only OAuth
+  // signs cookies).
+  const cookieSecret = deps.appCfg.encKey
+    ? createHash('sha256').update(`rilo-cookie-sig:${deps.appCfg.encKey}`).digest('hex')
+    : undefined;
+  await app.register(cookie, { secret: cookieSecret });
   await app.register(formbody);
 
   app.addHook('preHandler', async (req, reply) => {
@@ -89,6 +108,14 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
   registerModelsRoutes(app, deps.db, deps.getModels ?? getModelIds);
   registerMcpRoutes(app, deps.db, {
     googleEnabled: !!(deps.appCfg.googleClientId && deps.appCfg.googleClientSecret),
+    enableWebOauth: !!deps.appCfg.enableWebOauth,
+  });
+  registerOauthRoutes(app, deps.db, {
+    enableWebOauth: !!deps.appCfg.enableWebOauth,
+    webBaseUrl: deps.appCfg.webBaseUrl,
+    googleClientId: deps.appCfg.googleClientId,
+    googleClientSecret: deps.appCfg.googleClientSecret,
+    makeClient: deps.makeOauthClient,
   });
   return app;
 }

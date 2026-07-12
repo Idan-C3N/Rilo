@@ -13,8 +13,20 @@ function renderGoogleConnected(db: DB, userId: number, enabled: boolean): string
 }
 
 /** Google card when NOT connected (shown under "Connect a service"). Empty otherwise. */
-function renderGoogleConnect(db: DB, userId: number, enabled: boolean): string {
+function renderGoogleConnect(
+  db: DB,
+  userId: number,
+  enabled: boolean,
+  enableWebOauth: boolean,
+): string {
   if (!enabled || hasOAuthToken(db, userId, 'google')) return '';
+  // Public OAuth on: one-click consent (a real navigation off-site to Google).
+  if (enableWebOauth) {
+    return `<div class="card"><b>📧 Google Workspace</b> — Gmail + Calendar
+    <div>Connect your Google account in one click.</div>
+    <a class="btn" href="/oauth/google/start">Connect with Google</a></div>`;
+  }
+  // Default (firewalled): loopback helper + paste the refresh token.
   return `<div class="card"><b>📧 Google Workspace</b> — Gmail + Calendar
     <div>Connect once: run the loopback helper locally, then paste the refresh token here.</div>
     <ol>
@@ -59,10 +71,10 @@ const SAVED_FLASH: Record<string, Flash> = {
   google: { kind: 'ok', msg: 'Google connected ✅' },
 };
 
-function renderServicesBody(db: DB, userId: number, opts: { googleEnabled: boolean }): string {
+function renderServicesBody(db: DB, userId: number, opts: McpRouteOpts): string {
   const servers = listMcpServers(db, userId);
   const googleConnected = renderGoogleConnected(db, userId, opts.googleEnabled);
-  const googleConnect = renderGoogleConnect(db, userId, opts.googleEnabled);
+  const googleConnect = renderGoogleConnect(db, userId, opts.googleEnabled, opts.enableWebOauth);
   const rows = servers
     .map(
       (s) => `<div class="card"><b>${esc(s.name)}</b> (${esc(s.transport)}) ${s.enabled ? '🟢' : '⚪️'}
@@ -103,15 +115,26 @@ function parseCreds(text: string): Record<string, string> | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
+interface McpRouteOpts {
+  googleEnabled: boolean;
+  enableWebOauth: boolean;
+}
+
 export function registerMcpRoutes(
   app: FastifyInstance,
   db: DB,
-  opts: { googleEnabled: boolean } = { googleEnabled: false },
+  opts: McpRouteOpts = { googleEnabled: false, enableWebOauth: false },
 ): void {
   const hx = (req: any) => req.headers['hx-request'] === 'true';
-  app.get<{ Querystring: { saved?: string } }>('/mcp', async (req, reply) => {
+  app.get<{ Querystring: { saved?: string; error?: string } }>('/mcp', async (req, reply) => {
     const userId = (req as any).userId as number;
-    const flash = req.query.saved ? SAVED_FLASH[req.query.saved] : undefined;
+    // `error` carries the OAuth failure message (already generic); render it as
+    // an error flash. `flash()` escapes it, so the query value is XSS-safe.
+    const flash: Flash | undefined = req.query.error
+      ? { kind: 'error', msg: req.query.error }
+      : req.query.saved
+        ? SAVED_FLASH[req.query.saved]
+        : undefined;
     reply.type('text/html').send(
       layout('Services', renderServicesBody(db, userId, opts), { active: 'services', flash }),
     );
