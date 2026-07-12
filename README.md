@@ -1,66 +1,49 @@
 # personal-agent
 
 A personal, multi-channel AI agent (Telegram now, web UI for config/login) with
-reminders, follow-ups, heartbeat self-checks, and MCP tool support. Runs as a
-systemd service on a cheap Hetzner VPS with SQLite storage.
+reminders, follow-ups, heartbeat self-checks, and MCP tool support. Runs via
+Docker Compose with SQLite storage.
 
 ## Setup
 
-### 1. Inputs you need before you start
+Rilo runs as a single Node process backed by a SQLite file, plus bundled SearXNG
+(web search) and embedding (semantic memory) containers — all via Docker Compose.
 
-- **Hetzner Cloud API token** — Hetzner Console → your project → Security → API Tokens.
-- **SSH key** — add your public key in Hetzner Console → Security → SSH Keys, note its name (`SSH_KEY_NAME`).
-- **Telegram bot token** — create a bot via [@BotFather](https://t.me/BotFather), `/newbot`.
-- **OpenRouter API key** — from [openrouter.ai](https://openrouter.ai/keys) (optional global fallback; per-user keys are preferred and set later via the UI).
-- **Your own public IP** — `curl -4 ifconfig.me`, used as `OWNER_IP` (e.g. `1.2.3.4/32`) so the firewall only opens SSH/UI to you.
+### What you need first
 
-### 2. `.env` fields
-
-Copy `.env.example` to `.env` and fill in:
-
-| Field | Meaning |
+| Input | Where to get it |
 |---|---|
-| `DB_PATH` | SQLite file path, e.g. `./data/agent.db` |
-| `ENC_KEY` | base64 of 32 random bytes: `openssl rand -base64 32` |
-| `TELEGRAM_TOKEN` | from BotFather |
-| `OPENROUTER_KEY` | optional global fallback key |
-| `WEB_PORT` | port the web UI listens on, e.g. `8080` |
-| `WEB_BASE_URL` | optional; defaults to `http://localhost:$WEB_PORT` — set to `http://<SERVER_IP>:$WEB_PORT` once you have a server IP |
-| `HEARTBEAT_DEFAULT_MIN` | default heartbeat interval in minutes, e.g. `30` |
+| **Telegram bot token** | Create a bot via [@BotFather](https://t.me/BotFather) → `/newbot`. |
+| **Your Telegram numeric ID** | Message [@userinfobot](https://t.me/userinfobot); this becomes `OWNER_TELEGRAM_ID` (auto-owned + allowlisted on boot). |
+| **OpenRouter key** *(optional)* | [openrouter.ai/keys](https://openrouter.ai/keys) — a global fallback; per-user keys are preferred and set later in the UI. |
+| **A VPS** *(for server deploy)* | Any Ubuntu/Debian box with root SSH. |
 
-### 3. Run order
+### Run it locally
 
-1. Add your SSH key to Hetzner Cloud (Console → Security → SSH Keys) and note its name.
-2. Provision the server:
-   ```bash
-   HCLOUD_TOKEN=xxx OWNER_IP=1.2.3.4/32 WEB_PORT=8080 SSH_KEY_NAME=mykey ./deploy/hetzner/provision.sh
-   ```
-   This creates a firewall (SSH + `WEB_PORT` open to `OWNER_IP` only, all outbound allowed) and a server booted with `deploy/hetzner/cloud-init.yaml` (installs Node 22, creates the `agent` user, creates `/opt/personal-agent`). Note the printed server IP.
-3. Fill in `.env` locally (see fields above), including `WEB_BASE_URL` with the server IP.
-4. Copy `.env` to the server:
-   ```bash
-   scp .env root@<SERVER_IP>:/opt/personal-agent/.env
-   ```
-5. Deploy the app:
-   ```bash
-   SERVER_IP=<SERVER_IP> ./deploy/hetzner/deploy.sh
-   ```
-   This rsyncs the repo, runs `npm ci`/installs `tsx`, installs the systemd unit, and starts `personal-agent.service`.
-6. Message your bot on Telegram (anything). This creates your user row, but it starts **not allowlisted** — the agent will refuse until you allowlist yourself.
-7. Allowlist yourself. SSH into the server and run one SQL command against the SQLite DB:
-   ```bash
-   ssh root@<SERVER_IP>
-   sqlite3 /opt/personal-agent/data/agent.db \
-     "UPDATE users SET allowlisted = 1 WHERE id = (SELECT user_id FROM identities WHERE channel = 'telegram' ORDER BY id DESC LIMIT 1);"
-   ```
-   (If you have more than one user row, target yours by `identities.external_id`, i.e. your Telegram chat ID, instead of "most recent".)
-8. Message the bot `/login` to get a one-time link to the web UI. Open it and enter the 6-digit code the bot sends you to finish logging in.
+```bash
+cp .env.example .env      # fill in TELEGRAM_TOKEN, ENC_KEY, OWNER_TELEGRAM_ID
+docker compose up         # web UI on http://localhost:8080
+```
+
+`ENC_KEY` is `openssl rand -base64 32`. The DB persists in `./data/agent.db`.
+
+### Deploy to a server
+
+**Deploying with an AI agent?** Point it at [`DEPLOY.md`](DEPLOY.md) — a host-agnostic,
+step-by-step runbook it can follow end-to-end.
+
+**Doing it yourself?** See [`deploy/README.md`](deploy/README.md) for the full
+Docker Compose reference (provision, firewall, and the optional public HTTPS +
+"Connect with Google" path).
+
+After the app is up: message your bot, approve yourself as owner (auto if
+`OWNER_TELEGRAM_ID` is set), then `/login` for a one-time link to the web UI.
 
 ### Operating notes
 
-- Logs: `ssh root@<SERVER_IP> journalctl -u personal-agent -f`
-- Redeploy after code changes: re-run `SERVER_IP=<SERVER_IP> ./deploy/hetzner/deploy.sh`.
-- The UI/SSH are only reachable from `OWNER_IP` per the Hetzner firewall; if your IP changes, update the firewall rule in the Hetzner console (or re-run provisioning).
+- Logs: `ssh <box> 'cd /opt/personal-agent && docker compose logs -f'`
+- Redeploy after code changes: `ssh <box> 'cd /opt/personal-agent && git pull && docker compose up -d --build'`
+- Keep the UI/SSH firewalled to your own IP; if your IP changes, update the host firewall rule at your VPS provider.
 
 ## Connecting Google Workspace (Gmail + Calendar)
 
