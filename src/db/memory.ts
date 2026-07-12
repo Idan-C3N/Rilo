@@ -40,6 +40,11 @@ export function forget(db: DB, id: number): void {
   db.prepare('DELETE FROM memory WHERE id = ?').run(id);
 }
 
+/** Delete a fact only if it belongs to the given space (scoped, tenant-safe). */
+export function forgetInSpace(db: DB, id: number, spaceId: number): void {
+  db.prepare('DELETE FROM memory WHERE id = ? AND space_id = ?').run(id, spaceId);
+}
+
 export function vecToBlob(v: Float32Array): Buffer {
   return Buffer.from(v.buffer, v.byteOffset, v.byteLength);
 }

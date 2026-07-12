@@ -4,7 +4,7 @@ import {
   listSpacesForUser, listMembers, createSpace,
   addMember, removeMember, isMember,
 } from '../../db/spaces.js';
-import { recall, forget } from '../../db/memory.js';
+import { recall, forgetInSpace } from '../../db/memory.js';
 import { listAllowlisted, getUserById } from '../../db/users.js';
 import { layout, esc } from '../render.js';
 
@@ -77,8 +77,9 @@ export function registerSpacesRoutes(app: FastifyInstance, db: DB): void {
   app.post<{ Params: { id: string; fid: string } }>('/spaces/:id/facts/:fid/delete', async (req, reply) => {
     const uid = uidOf(req);
     const spaceId = Number(req.params.id);
-    // any member may delete a shared fact in a space they belong to
-    if (isMember(db, spaceId, uid)) forget(db, Number(req.params.fid));
+    // any member may delete a shared fact in a space they belong to, but the
+    // deletion is scoped to that space so an arbitrary fid from elsewhere is a no-op
+    if (isMember(db, spaceId, uid)) forgetInSpace(db, Number(req.params.fid), spaceId);
     reply.redirect('/spaces');
   });
 }
