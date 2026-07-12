@@ -10,6 +10,7 @@ services:
     env_file: .env                 # secrets + per-machine values (gitignored; see .env.example)
     environment:                   # invariant, non-secret — identical everywhere, and these
       SEARXNG_URL: http://searxng:8080 # win over .env so they can't be broken from there
+      EMBED_URL: http://embed:80   # bundled embedding server (internal only)
       WEB_PORT: "8080"             # container always listens on 8080
       DB_PATH: /app/data/agent.db  # points at the bind-mounted data dir below
     ports:
@@ -18,6 +19,7 @@ services:
       - ./data:/app/data           # bind-mount: reuses an existing agent.db, host-visible
     depends_on:
       - searxng
+      - embed
     restart: unless-stopped
 
   # Bundled web-search backend: no API key, no signup, no per-query cost.
@@ -29,3 +31,15 @@ services:
       - ./searxng:/etc/searxng     # settings.yml enables the JSON format Rilo needs
                                     # (not :ro — the entrypoint may write a secret on boot)
     restart: unless-stopped
+
+  # Bundled multilingual embedding server for semantic memory recall.
+  # Internal-only (no host publish); the app reaches it at http://embed:80.
+  embed:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    command: ["--model-id", "intfloat/multilingual-e5-small"]
+    volumes:
+      - embed_models:/data         # cache the model download across restarts
+    restart: unless-stopped
+
+volumes:
+  embed_models:

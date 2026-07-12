@@ -1,8 +1,11 @@
 # Deploying Rilo
 
 Rilo is a **single Node process backed by a SQLite file**, plus a bundled
-[SearXNG](https://docs.searxng.org/) container for web search. Telegram uses
-outbound long-polling, so there is no inbound dependency beyond the web UI port.
+[SearXNG](https://docs.searxng.org/) container for web search and a bundled
+**embedding** container (HuggingFace TEI, `multilingual-e5-small`) that powers
+semantic memory recall. Like SearXNG, the embedding server is internal-only and
+needs no host port or firewall rule. Telegram uses outbound long-polling, so
+there is no inbound dependency beyond the web UI port.
 
 There is **one deployment method: Docker Compose** — the same `compose.yml` runs
 locally and on a server. Native `npm` still works for no-Docker local dev.
