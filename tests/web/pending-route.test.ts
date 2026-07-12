@@ -3,7 +3,7 @@ import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
 import { createUserWithIdentity, setAllowlisted, setOwner, isAllowlisted } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
-import { startLogin, verifyCode } from '../../src/db/sessions.js';
+import { startLogin, verifyByToken } from '../../src/db/sessions.js';
 import { buildWebApp } from '../../src/web/server.js';
 import { createRegistration, bindRequester, markPendingApproval, findByCode } from '../../src/db/registrations.js';
 
@@ -11,9 +11,8 @@ let db: DB, app: any;
 const notified: any[] = [];
 
 function sessionFor(userId: number): string {
-  const { token, code } = startLogin(db, userId);
-  verifyCode(db, token, code);
-  return `token=${token}`;
+  const { token } = startLogin(db, userId);
+  return `token=${verifyByToken(db, token)}`;
 }
 
 /** Seed a pending registration bound to a fresh requester; return the requester id. */
