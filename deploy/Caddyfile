@@ -1,0 +1,11 @@
+# Caddy config for the public rilo.my deployment. Used only by compose.caddy.yml.
+# Auto-provisions and renews a Let's Encrypt cert for rilo.my, reverse-proxies
+# to the app container on the internal compose network (service name `app`).
+#
+# ACME registers anonymously (no email) — fine for Let's Encrypt. To receive
+# cert-expiry notices, set ACME_EMAIL in .env and uncomment the global block:
+#   { email {$ACME_EMAIL} }
+
+rilo.my {
+	reverse_proxy app:8080
+}

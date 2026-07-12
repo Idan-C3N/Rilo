@@ -72,9 +72,9 @@ By default Rilo connects Google via the firewall-friendly loopback/paste flow
 Rilo on a **public HTTPS URL** and want a one-click **Connect with Google**
 button, set `ENABLE_WEB_OAUTH=true`. This requires:
 
-- A public, HTTPS `WEB_BASE_URL` (terminate TLS at a reverse proxy such as
-  Caddy or nginx in front of the app — Rilo itself serves plain HTTP). This is
-  documentation only; firewalled installs are unaffected and need no proxy.
+- A public, HTTPS `WEB_BASE_URL` (terminate TLS at a reverse proxy in front of
+  the app — Rilo itself serves plain HTTP). A ready-made **Caddy** overlay ships
+  in the repo: `compose.caddy.yml` + `deploy/Caddyfile` (auto Let's Encrypt).
 - A Google Cloud OAuth client of type **Web application** whose authorized
   redirect URI is `$WEB_BASE_URL/oauth/google/callback`.
 - Publish the OAuth consent screen to **Production** (unverified is fine for a
@@ -82,6 +82,28 @@ button, set `ENABLE_WEB_OAUTH=true`. This requires:
   mode Google expires refresh tokens after 7 days, which breaks the connection.
 
 Leave `ENABLE_WEB_OAUTH` unset (default `false`) to keep the loopback/paste flow.
+
+### Public deploy with the Caddy overlay
+
+Prereqs: a DNS A record for your domain → the box, and inbound **80 + 443 open
+to the world** (Let's Encrypt ACME) — add these to the Hetzner firewall
+alongside the SSH/8080 owner-only rules above. Then set in `.env`:
+
+```
+WEB_BASE_URL=https://<your-domain>
+ENABLE_WEB_OAUTH=true
+```
+
+and bring the stack up **with the overlay** (Caddy on 80/443, app internal-only):
+
+```bash
+cd /opt/personal-agent && git pull
+docker compose -f compose.yml -f compose.caddy.yml up -d --build
+```
+
+Use the same two `-f` files on every redeploy, or the app re-publishes 8080 and
+Caddy stops. `deploy/Caddyfile` hardcodes the domain + ACME email — edit it for
+your own host.
 
 ---
 
