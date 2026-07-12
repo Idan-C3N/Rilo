@@ -1,6 +1,7 @@
 import { Bot } from 'grammy';
 import telegramifyMarkdown from 'telegramify-markdown';
 import type { ChannelAdapter, InboundMessage, TypingController } from './adapter.js';
+import { log } from '../log.js';
 
 export interface BotLike {
   on(event: string, cb: (ctx: any) => Promise<void> | void): void;
@@ -44,11 +45,11 @@ export function createTelegramAdapter(deps: TelegramDeps): TelegramAdapter {
     try {
       await handler(m);
     } catch (err) {
-      console.error(`inbound handler failed for ${channelUserId}:`, err);
+      log.error({ event: 'telegram.handler.error', channelUserId, err }, 'inbound handler failed (contained)');
       try {
         await bot.api.sendMessage(channelUserId, ERROR_REPLY);
       } catch (sendErr) {
-        console.error('failed to send error reply:', sendErr);
+        log.error({ event: 'telegram.send.error', channelUserId, err: sendErr }, 'failed to send error reply');
       }
     }
   };
@@ -81,7 +82,7 @@ export function createTelegramAdapter(deps: TelegramDeps): TelegramAdapter {
 
   // Backstop: never let any error kill long polling.
   bot.catch?.((err) => {
-    console.error('grammy bot error (contained):', err);
+    log.error({ event: 'telegram.bot.error', err }, 'grammy bot error (contained)');
   });
 
   return {
@@ -114,7 +115,7 @@ export function createTelegramAdapter(deps: TelegramDeps): TelegramAdapter {
         const md = telegramifyMarkdown(text, 'escape');
         await bot.api.sendMessage(channelUserId, md, { parse_mode: 'MarkdownV2', ...extra });
       } catch (err) {
-        console.error(`markdown send failed for ${channelUserId}, sending plain:`, err);
+        log.warn({ event: 'telegram.markdown.fallback', channelUserId, err }, 'markdown send failed, sending plain');
         await bot.api.sendMessage(channelUserId, text, extra);
       }
     },

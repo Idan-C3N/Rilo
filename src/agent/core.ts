@@ -4,6 +4,7 @@ import type { AppConfig } from '../config.js';
 import { addMessage } from '../db/messages.js';
 import { buildContext } from './history.js';
 import { resolveModels } from './models.js';
+import { log, summarizeSteps } from '../log.js';
 
 const HISTORY_LIMIT = 20;
 
@@ -21,13 +22,19 @@ const BASE_PERSONA = [
   'When you genuinely cannot do something yet (e.g. browse the web or read an uploaded file), say so briefly and offer the best alternative — never pretend.',
 ].join('\n');
 
+export interface LlmUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+}
+
 export type GenerateFn = (args: {
   model: LanguageModel;
   system?: string;
   messages: CoreMessage[];
   tools?: ToolSet;
   stopWhen?: unknown;
-}) => Promise<{ text: string }>;
+}) => Promise<{ text: string; usage?: LlmUsage; steps?: unknown }>;
 
 export interface AgentDeps {
   db: DB;
@@ -41,10 +48,13 @@ export interface TurnOpts {
   input: string;
   system?: string;
   useStrong?: boolean;
+  /** Correlation id shared across all log lines for this message. */
+  turnId?: string;
 }
 
 export async function runAgentTurn(deps: AgentDeps, opts: TurnOpts): Promise<string> {
   const { db } = deps;
+  const lg = log.child({ turnId: opts.turnId, userId: opts.userId });
   addMessage(db, opts.userId, 'user', opts.input);
 
   const ctx = buildContext(db, opts.userId, HISTORY_LIMIT);
@@ -53,8 +63,14 @@ export async function runAgentTurn(deps: AgentDeps, opts: TurnOpts): Promise<str
 
   const models = resolveModels(db, deps.appCfg, opts.userId);
   const model = opts.useStrong ? models.strong : models.cheap;
+  const modelId = (model as { modelId?: string })?.modelId;
   const built = deps.buildTools ? await deps.buildTools(opts.userId) : undefined;
+  lg.info(
+    { event: 'turn.start', model: modelId, useStrong: !!opts.useStrong, tools: built ? Object.keys(built.tools).length : 0 },
+    'turn start',
+  );
 
+  const t0 = Date.now();
   try {
     const result = await deps.generate({
       model,
@@ -63,8 +79,22 @@ export async function runAgentTurn(deps: AgentDeps, opts: TurnOpts): Promise<str
       tools: built?.tools,
     });
 
+    lg.info(
+      {
+        event: 'llm.done',
+        ms: Date.now() - t0,
+        usage: result.usage,
+        tools: summarizeSteps(result.steps),
+        chars: result.text.length,
+      },
+      'llm done',
+    );
+
     addMessage(db, opts.userId, 'assistant', result.text);
     return result.text;
+  } catch (err) {
+    lg.error({ event: 'turn.error', ms: Date.now() - t0, model: modelId, err }, 'llm/tool failed');
+    throw err;
   } finally {
     await built?.closeAll();
   }

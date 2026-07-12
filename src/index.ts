@@ -17,19 +17,22 @@ import { backfillEmbeddings } from './agent/memory-embed.js';
 import { fireHeartbeat, seedHeartbeats } from './scheduler/heartbeat.js';
 import { startWeb } from './web/server.js';
 import { resolveDefaultModels } from './openrouter/catalog.js';
+import { log } from './log.js';
 
 const appCfg = loadConfig(process.env);
 await initCrypto(appCfg.encKey);
 const db = openDb(appCfg.dbPath);
 
-const generate: GenerateFn = async (args) =>
-  generateText({
+const generate: GenerateFn = async (args) => {
+  const r = await generateText({
     model: args.model,
     system: args.system,
     messages: args.messages as CoreMessage[],
     tools: args.tools,
     stopWhen: stepCountIs(8),
   });
+  return { text: r.text, usage: r.usage, steps: r.steps };
+};
 
 const adapter = createTelegramAdapter({ token: appCfg.telegramToken });
 
@@ -38,7 +41,7 @@ const adapter = createTelegramAdapter({ token: appCfg.telegramToken });
 if (appCfg.ownerTelegramId) {
   ensureOwner(db, appCfg.ownerTelegramId);
 } else {
-  console.warn('OWNER_TELEGRAM_ID is unset — nobody can approve access requests.');
+  log.warn({ event: 'boot.warn' }, 'OWNER_TELEGRAM_ID is unset — nobody can approve access requests.');
 }
 
 // Fetch the bot username so registration deep links resolve. Best-effort: if
@@ -46,7 +49,7 @@ if (appCfg.ownerTelegramId) {
 try {
   await adapter.ensureBotUsername();
 } catch (err) {
-  console.warn('could not fetch bot username (registration links may be incomplete):', err);
+  log.warn({ event: 'boot.warn', err }, 'could not fetch bot username (registration links may be incomplete)');
 }
 
 const google =
@@ -83,8 +86,8 @@ seedHeartbeats(db, appCfg);
 // (existing rows, or rows written while it was down). Non-blocking.
 if (embed) {
   backfillEmbeddings(db, embed)
-    .then((n) => n && console.log(`memory: backfilled ${n} embeddings`))
-    .catch((err) => console.warn('memory: embedding backfill failed:', err));
+    .then((n) => n && log.info({ event: 'memory.backfill', count: n }, `backfilled ${n} embeddings`))
+    .catch((err) => log.warn({ event: 'memory.backfill.error', err }, 'embedding backfill failed'));
 }
 
 startScheduler({ db, appCfg, adapter, generate, channel: adapter.channel, fireReminder, fireHeartbeat });
@@ -100,7 +103,7 @@ await startWeb({
 // unreachable it rejects (e.g. getMe 401). Surface it clearly instead of a
 // bare unhandled rejection — the scheduler + web UI keep running regardless.
 Promise.resolve(adapter.start()).catch((err) => {
-  console.error('Telegram adapter failed to start (check TELEGRAM_TOKEN / connectivity):', err);
+  log.error({ event: 'telegram.start.error', err }, 'Telegram adapter failed to start (check TELEGRAM_TOKEN / connectivity)');
 });
 
-console.log('personal-agent running (web UI + scheduler up; Telegram connecting…)');
+log.info({ event: 'boot' }, 'personal-agent running (web UI + scheduler up; Telegram connecting…)');

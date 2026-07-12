@@ -160,6 +160,17 @@ describe('handleInbound', () => {
     expect(typingEvents).toEqual(['start', 'stop']);
   });
 
+  it('sends an apology (not silence) and stops typing when the turn throws', async () => {
+    const u = createUserWithIdentity(db, { channel: 'telegram', externalId: '99', heartbeat_interval_min: 30 });
+    setAllowlisted(db, u.id, true);
+    setOpenrouterKey(db, u.id, 'sk-or');
+    const d = { ...deps(), generate: async () => { throw new Error('boom'); } };
+    await handleInbound(d, { channel: 'telegram', channelUserId: '99', text: 'hi', name: 'Y' });
+    expect(sent.length).toBe(1);
+    expect(sent[0][1]).toContain('Something went wrong');
+    expect(typingEvents).toEqual(['start', 'stop']);
+  });
+
   it('invokes maybeSummarize after a successful reply', async () => {
     const u = createUserWithIdentity(db, { channel: 'telegram', externalId: '11', heartbeat_interval_min: 30 });
     setAllowlisted(db, u.id, true);

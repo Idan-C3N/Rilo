@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import type { DB } from '../db/db.js';
 import type { AppConfig } from '../config.js';
 import type { InboundMessage, ChannelAdapter, TypingController } from '../channels/adapter.js';
+import { log } from '../log.js';
 import {
   getUserByIdentity,
   createUserWithIdentity,
@@ -43,7 +45,9 @@ export interface DispatchDeps {
 
 export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Promise<void> {
   const { db } = deps;
+  const turnId = randomUUID().slice(0, 8);
   let user = getUserByIdentity(db, m.channel, m.channelUserId);
+  const isNewUser = !user;
   if (!user) {
     user = createUserWithIdentity(db, {
       channel: m.channel,
@@ -62,6 +66,8 @@ export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Prom
   }
 
   const text = m.text.trim();
+  const lg = log.child({ turnId, userId: user.id, channel: m.channel });
+  lg.info({ event: 'inbound', chars: m.text.length, newUser: isNewUser, hasContact: !!m.contact }, 'message in');
 
   // 1. Registration deep link: /start <code> binds the requester and asks them
   //    to share their contact so we can verify the phone.
@@ -142,11 +148,13 @@ export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Prom
   // 4. Allowlist gate.
   if (!isAllowlisted(db, user.id)) {
     if (findPendingByUserId(db, user.id)) {
+      lg.info({ event: 'gate', reason: 'pending' }, 'blocked: pending approval');
       await deps.adapter.send(
         m.channelUserId,
         "Your request is awaiting approval — you'll hear from us soon.",
       );
     } else {
+      lg.info({ event: 'gate', reason: 'not_authorized' }, 'blocked: not allowlisted');
       await deps.adapter.send(
         m.channelUserId,
         `${NOT_AUTHORIZED}\n\nWant access? Register here: ${deps.webBaseUrl}/register`,
@@ -157,6 +165,7 @@ export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Prom
 
   // 5. Normal handling — magic-link login (#11).
   if (text === '/login') {
+    lg.info({ event: 'gate', reason: 'login' }, 'magic-link issued');
     const { token } = startLogin(db, user.id);
     const url = `${deps.webBaseUrl}/login?token=${token}`;
     await deps.adapter.send(
@@ -168,20 +177,29 @@ export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Prom
   }
   const typing = deps.adapter.typingFor(m.channelUserId);
   typing.start();
+  const t0 = Date.now();
   try {
     const reply = await deps.runTurn(
       { db, appCfg: deps.appCfg, generate: deps.generate, buildTools: deps.buildTools },
-      { userId: user.id, input: m.text, useStrong: true },
+      { userId: user.id, input: m.text, useStrong: true, turnId },
     );
     await deps.adapter.send(m.channelUserId, reply);
+    lg.info({ event: 'reply', chars: reply.length, ms: Date.now() - t0 }, 'reply sent');
     try {
       await (deps.maybeSummarize ?? maybeSummarize)(
         { db, appCfg: deps.appCfg, generate: deps.generate },
         user.id,
       );
-    } catch {
+    } catch (err) {
       // summarization failures must never break a reply
+      lg.warn({ event: 'summarize.error', err }, 'summarize failed (ignored)');
     }
+  } catch (err) {
+    lg.error({ event: 'turn.failed', ms: Date.now() - t0, err }, 'turn failed');
+    await deps.adapter.send(
+      m.channelUserId,
+      '⚠️ Something went wrong on my end — please try again in a moment.',
+    );
   } finally {
     typing.stop();
   }
