@@ -122,6 +122,15 @@ describe('handleInbound', () => {
       expect(owner.is_owner).toBe(1);
     });
 
+    it('bare /approve by the owner returns a usage hint, not an LLM reply', async () => {
+      ensureOwner(db, 'OWNER');
+      let modelCalled = false;
+      const d = { ...deps(), generate: async () => { modelCalled = true; return { text: 'x' }; } };
+      await handleInbound(d as any, { channel: 'telegram', channelUserId: 'OWNER', text: '/approve', name: 'Owner' });
+      expect(modelCalled).toBe(false);
+      expect(sent[0][1]).toContain('Usage: /approve');
+    });
+
     it('/approve <id> by a NON-owner does not allowlist anyone', async () => {
       const target = await seedPending();
       // a random allowlisted non-owner tries to approve

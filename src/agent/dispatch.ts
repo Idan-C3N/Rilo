@@ -110,10 +110,15 @@ export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Prom
     return;
   }
 
-  // 3. Owner approval commands.
-  const approveMatch = text.match(/^\/(approve|deny)\s+(\d+)$/);
+  // 3. Owner approval commands. Catch the command word regardless of args so a
+  //    bare `/approve` gets a usage hint instead of leaking to the LLM.
+  const approveMatch = text.match(/^\/(approve|deny)\b\s*(\d+)?/i);
   if (approveMatch && isOwner(db, user.id)) {
-    const action = approveMatch[1];
+    const action = approveMatch[1]!.toLowerCase();
+    if (!approveMatch[2]) {
+      await deps.adapter.send(m.channelUserId, `Usage: /${action} <user id>`);
+      return;
+    }
     const targetUserId = Number(approveMatch[2]);
     const reg = action === 'approve' ? approveUser(db, targetUserId) : denyUser(db, targetUserId);
     if (!reg) {
