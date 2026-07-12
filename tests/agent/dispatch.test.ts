@@ -9,9 +9,10 @@ import { runAgentTurn } from '../../src/agent/core.js';
 
 let db: DB;
 const sent: any[] = [];
+const sentOpts: any[] = [];
 const typingEvents: string[] = [];
 const adapter = {
-  send: async (id: string, text: string) => { sent.push([id, text]); },
+  send: async (id: string, text: string, opts?: any) => { sent.push([id, text]); sentOpts.push(opts); },
   typingFor: (_id: string) => ({ start: () => typingEvents.push('start'), stop: () => typingEvents.push('stop') }),
 };
 const deps = () => ({
@@ -24,7 +25,7 @@ beforeAll(async () => {
   await sodium.ready;
   await initCrypto(sodium.to_base64(sodium.randombytes_buf(32), sodium.base64_variants.ORIGINAL));
 });
-beforeEach(() => { db = openDb(':memory:'); sent.length = 0; typingEvents.length = 0; });
+beforeEach(() => { db = openDb(':memory:'); sent.length = 0; sentOpts.length = 0; typingEvents.length = 0; });
 
 describe('handleInbound', () => {
   it('rejects non-allowlisted users without calling the model', async () => {
@@ -62,7 +63,7 @@ describe('handleInbound', () => {
     expect(sent).toEqual([['12', 'reply!']]);
   });
 
-  it('handles /login by sending a code + link, no model call', async () => {
+  it('handles /login by sending a magic link (no code), preview disabled, no model call', async () => {
     const u = createUserWithIdentity(db, { channel: 'telegram', externalId: '30', heartbeat_interval_min: 30 });
     setAllowlisted(db, u.id, true);
     let modelCalled = false;
@@ -70,7 +71,8 @@ describe('handleInbound', () => {
     await handleInbound(d as any, { channel: 'telegram', channelUserId: '30', text: '/login', name: 'Z' });
     expect(modelCalled).toBe(false);
     expect(sent[0][1]).toMatch(/http:\/\/host:8080\/login\?token=/);
-    expect(sent[0][1]).toMatch(/\d{6}/);
+    expect(sent[0][1]).not.toContain('code'); // no 6-digit code anymore
+    expect(sentOpts[0]).toMatchObject({ disableLinkPreview: true });
   });
 
   describe('seeding new user defaults', () => {

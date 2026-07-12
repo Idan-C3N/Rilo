@@ -47,11 +47,12 @@ export async function handleInbound(deps: DispatchDeps, m: InboundMessage): Prom
     return;
   }
   if (m.text.trim() === '/login') {
-    const { token, code } = startLogin(db, user.id);
+    const { token } = startLogin(db, user.id);
     const url = `${deps.webBaseUrl}/login?token=${token}`;
     await deps.adapter.send(
       m.channelUserId,
-      `Open ${url} and enter this code within 10 minutes:\n\n${code}`,
+      `Log in: ${url}\n\n(link expires in 10 minutes, one-time use)`,
+      { disableLinkPreview: true },
     );
     return;
   }

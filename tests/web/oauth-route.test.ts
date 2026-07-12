@@ -3,7 +3,7 @@ import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
 import { createUserWithIdentity } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
-import { startLogin, verifyCode } from '../../src/db/sessions.js';
+import { startLogin, verifyByToken } from '../../src/db/sessions.js';
 import { hasOAuthToken, getOAuthToken } from '../../src/db/oauth.js';
 import { buildWebApp } from '../../src/web/server.js';
 import type { MakeOauthClient } from '../../src/web/routes/oauth.js';
@@ -19,9 +19,8 @@ beforeAll(async () => {
 beforeEach(async () => {
   db = openDb(':memory:');
   uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
-  const { token, code } = startLogin(db, uid);
-  verifyCode(db, token, code);
-  cookie = `token=${token}`;
+  const { token } = startLogin(db, uid);
+  cookie = `token=${verifyByToken(db, token)}`;
 });
 
 /** Fake Google client factory: real generateAuthUrl shape, stubbed getToken. */

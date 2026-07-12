@@ -1,31 +1,40 @@
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { DB } from './db.js';
 
 const TTL_MS = 10 * 60 * 1000;
+const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 
-export function startLogin(db: DB, userId: number): { token: string; code: string } {
+/** Mint a one-time login token (10-min TTL). The link carrying it is the sole factor. */
+export function startLogin(db: DB, userId: number): { token: string } {
   const token = randomBytes(24).toString('hex');
-  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-  db.prepare('INSERT INTO sessions (token, user_id, code, verified, expires_at) VALUES (?, ?, ?, 0, ?)').run(
+  db.prepare('INSERT INTO sessions (token, user_id, code, verified, expires_at) VALUES (?, ?, NULL, 0, ?)').run(
     token,
     userId,
-    code,
     Date.now() + TTL_MS,
   );
-  return { token, code };
+  return { token };
 }
 
-export function verifyCode(db: DB, token: string, code: string): boolean {
-  const row = db.prepare('SELECT * FROM sessions WHERE token = ?').get(token) as
-    | { code: string | null; expires_at: number }
+/**
+ * Verify a magic-link token and rotate it. Returns a NEW session token to set as
+ * the cookie, or undefined if the token is unknown / already used / expired.
+ *
+ * Rotating the token value in one UPDATE gives both one-time-use (the old link
+ * token no longer resolves) and rotation (the long-lived session secret never
+ * appeared in a URL).
+ */
+export function verifyByToken(db: DB, token: string): string | undefined {
+  const row = db.prepare('SELECT verified, expires_at FROM sessions WHERE token = ?').get(token) as
+    | { verified: number; expires_at: number }
     | undefined;
-  if (!row || row.code == null || row.expires_at < Date.now()) return false;
-  if (row.code !== code) return false;
-  db.prepare('UPDATE sessions SET verified = 1, code = NULL, expires_at = ? WHERE token = ?').run(
-    Date.now() + 7 * 24 * 60 * 60 * 1000,
+  if (!row || row.verified === 1 || row.expires_at < Date.now()) return undefined;
+  const newToken = randomBytes(24).toString('hex');
+  db.prepare('UPDATE sessions SET token = ?, verified = 1, expires_at = ? WHERE token = ?').run(
+    newToken,
+    Date.now() + SESSION_MS,
     token,
   );
-  return true;
+  return newToken;
 }
 
 export function getSession(db: DB, token: string): { user_id: number; verified: number } | undefined {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openDb, type DB } from '../../src/db/db.js';
 import { createUserWithIdentity } from '../../src/db/users.js';
-import { startLogin, verifyCode } from '../../src/db/sessions.js';
+import { startLogin, verifyByToken } from '../../src/db/sessions.js';
 import { sessionUserId } from '../../src/web/auth.js';
 
 let db: DB, uid: number;
@@ -16,8 +16,8 @@ describe('sessionUserId', () => {
     expect(sessionUserId(db, token)).toBeUndefined();
   });
   it('returns user id for verified session', () => {
-    const { token, code } = startLogin(db, uid);
-    verifyCode(db, token, code);
-    expect(sessionUserId(db, token)).toBe(uid);
+    const { token } = startLogin(db, uid);
+    const sessionToken = verifyByToken(db, token)!;
+    expect(sessionUserId(db, sessionToken)).toBe(uid);
   });
 });
