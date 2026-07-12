@@ -19,6 +19,7 @@ sketch, files touched, open decisions, and how to parallelize across agents.
 - **Deploy rework — single root Docker Compose** (retired systemd; `compose.yml`+`Dockerfile`+`searxng/` at root; bind-mount `./data`; `.env` for secrets, invariants baked into compose; `deploy/provision.sh`; git-pull redeploy) — merged + pushed. Spec: `2026-07-11-single-compose-deploy-design.md`.
 - **`dev` script fix** — `npm run dev` now loads `.env` (was crashing on missing `DB_PATH`) — pushed.
 - **Public repo** — pushed to `github.com/Idan-C3N/Rilo` (PUBLIC). History verified secret-clean; all commits re-identified to the personal `Idan-C3N <idanco32@gmail.com>` (work identity scrubbed off).
+- **#1 — Google web OAuth** (opt-in `ENABLE_WEB_OAUTH`; `/oauth/google/start`+`/callback`; signed-cookie CSRF `state`; loopback/paste kept as firewalled fallback; Slack still paste) — **merged via PR #1** + manually verified end-to-end. Spec: `2026-07-11-google-web-oauth-design.md`.
 
 ## New follow-ups (from the deploy/OSS session)
 
@@ -70,9 +71,9 @@ workstream's final review passes (same subagent-driven flow used so far).
 
 ---
 
-## #1 — Easier connections: real OAuth (Google)  ·  🟡 BUILT, not merged
+## #1 — Easier connections: real OAuth (Google)  ·  ✅ DONE (merged PR #1)
 
-**Status:** brainstormed → spec (`2026-07-11-google-web-oauth-design.md`) → built + self-reviewed on branch `feat/1-google-web-oauth`. **Not merged to `main`.** Scope narrowed in brainstorm: **Google only** (opt-in via `ENABLE_WEB_OAUTH`, default off; loopback/paste kept as the firewalled fallback; signed-cookie CSRF `state`). **Slack stays token-paste** (deferred). Merge when ready.
+**Status:** brainstormed → spec (`2026-07-11-google-web-oauth-design.md`) → built + self-reviewed → **merged via PR #1** + manually verified end-to-end (local Web-app client, consent → callback → Gmail/Calendar tools work). Scope: **Google only** (opt-in via `ENABLE_WEB_OAUTH`, default off; loopback/paste kept as the firewalled fallback; signed-cookie CSRF `state`). **Slack stays token-paste** (deferred). Prod note: publish the OAuth consent screen to **Production** (Testing mode expires refresh tokens after 7 days).
 
 **Goal:** Replace manual token-paste with a real "Connect" → provider consent → callback flow.
 
@@ -197,10 +198,9 @@ workstream's final review passes (same subagent-driven flow used so far).
 
 ## Suggested sequencing (updated)
 
-1. ~~#8 ∥ #1~~ — done (#8 merged; #1 on branch). Public repo already pushed.
-2. **Merge #1** to `main` (independent; disjoint from the deploy/search work).
-3. **#3 security pass** — pressing now that the repo is public. Audit sessions/CSRF/rate-limit/deps/error-leak; fix; test.
-4. **#9** onboarding, then **#11** magic-link (or combine) — serialize (both touch `dispatch.ts`/login).
-5. **#12 shared/household memory** — after the auth/onboarding cluster (depends on how users/groups are managed; touches `dispatch.ts` + `db/memory.ts`).
-6. **#5 README** rewrite (reflect #8 SearXNG default, single-Compose deploy, #1 outcome).
-7. **Live-box migration** systemd → Compose (when convenient; DB-backup first).
+1. ~~#8 ∥ #1~~ — **both merged** to `main`. Public repo pushed.
+2. **#3 security pass** — pressing now that the repo is public. Audit sessions/CSRF/rate-limit/deps/error-leak; fix; test.
+3. **#9** onboarding, then **#11** magic-link (or combine) — serialize (both touch `dispatch.ts`/login).
+4. **#12 shared/household memory** — after the auth/onboarding cluster (depends on how users/groups are managed; touches `dispatch.ts` + `db/memory.ts`).
+5. **#5 README** rewrite (reflect #8 SearXNG default, single-Compose deploy, #1 outcome).
+6. **Live-box migration** systemd → Compose (when convenient; DB-backup first).
