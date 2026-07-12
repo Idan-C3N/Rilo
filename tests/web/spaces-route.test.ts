@@ -161,4 +161,17 @@ describe('Spaces web page', () => {
     expect(res.statusCode).toBe(302);
     expect(factExists(personalFid)).toBe(true);
   });
+
+  it('GET /spaces shows a shared fact even when >50 newer visible rows exist', async () => {
+    const a = createUserWithIdentity(db, { channel: 'telegram', externalId: 'a', heartbeat_interval_min: 30 });
+    setAllowlisted(db, a.id, true);
+    const space = createSpace(db, { name: 'Home', createdBy: a.id });
+    remember(db, a.id, 'ancient shared fact', undefined, space.id);
+    // 55 newer personal rows would push the old shared fact past recall()'s LIMIT 50.
+    for (let i = 0; i < 55; i++) remember(db, a.id, `personal note ${i}`);
+
+    const res = await app.inject({ method: 'GET', url: '/spaces', headers: { cookie: sessionFor(a.id) } });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('ancient shared fact');
+  });
 });

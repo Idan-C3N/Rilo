@@ -4,7 +4,7 @@ import {
   listSpacesForUser, listMembers, createSpace,
   addMember, removeMember, isMember,
 } from '../../db/spaces.js';
-import { recall, forgetInSpace } from '../../db/memory.js';
+import { listSpaceFacts, forgetInSpace } from '../../db/memory.js';
 import { listAllowlisted, getUserById } from '../../db/users.js';
 import { layout, esc } from '../render.js';
 
@@ -18,8 +18,8 @@ export function registerSpacesRoutes(app: FastifyInstance, db: DB): void {
     const cards = spaces
       .map((s) => {
         const members = listMembers(db, s.id).map((u) => esc(u.name ?? `user ${u.id}`)).join(', ');
-        // shared facts in this space = recall rows whose space_id === s.id
-        const facts = recall(db, uid).filter((m) => m.space_id === s.id);
+        // shared facts in this space (unbounded — recall's LIMIT would drop older rows)
+        const facts = listSpaceFacts(db, s.id);
         const factRows = facts.length
           ? facts
               .map((m) => {

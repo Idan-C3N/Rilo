@@ -36,6 +36,8 @@ export function recall(db: DB, userId: number, query?: string): MemoryItem[] {
     .all({ uid: userId }) as MemoryItem[];
 }
 
+// INTERNAL/TEST-ONLY: unscoped delete by id. Do NOT call from a request handler —
+// use forgetInSpace (scoped) for user-facing deletes.
 export function forget(db: DB, id: number): void {
   db.prepare('DELETE FROM memory WHERE id = ?').run(id);
 }
@@ -43,6 +45,11 @@ export function forget(db: DB, id: number): void {
 /** Delete a fact only if it belongs to the given space (scoped, tenant-safe). */
 export function forgetInSpace(db: DB, id: number, spaceId: number): void {
   db.prepare('DELETE FROM memory WHERE id = ? AND space_id = ?').run(id, spaceId);
+}
+
+/** All facts shared to a space, newest first — unbounded (no recall LIMIT). */
+export function listSpaceFacts(db: DB, spaceId: number): MemoryItem[] {
+  return db.prepare('SELECT * FROM memory WHERE space_id = ? ORDER BY id DESC').all(spaceId) as MemoryItem[];
 }
 
 export function vecToBlob(v: Float32Array): Buffer {

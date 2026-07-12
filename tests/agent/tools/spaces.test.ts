@@ -36,6 +36,10 @@ describe('spaces tool', () => {
     const t = makeSpacesTool(db, a);
     const res = await t.execute!({ action: 'add_member', name: 'Work', member: 'Dana' }, {} as any) as { ok: boolean };
     expect(res.ok).toBe(false);
+    // The rejected add_member must have had no side effect: the non-member caller
+    // was not sneaked into the space, and its membership is unchanged (only b, the owner).
+    const work = getSpaceByName(db, b, 'Work')!;
+    expect(isMember(db, work.id, a)).toBe(false);
   });
 
   it('leave removes the caller', async () => {
