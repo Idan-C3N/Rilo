@@ -3,6 +3,7 @@ import type { DB } from '../../db/db.js';
 import { getConfig, getOpenrouterKey } from '../../db/config.js';
 import { listMcpServers } from '../../db/mcp.js';
 import { hasOAuthToken } from '../../db/oauth.js';
+import { isOwner } from '../../db/users.js';
 import { layout, esc } from '../render.js';
 
 function statusRow(label: string, status: string, href: string): string {
@@ -29,6 +30,12 @@ export function registerHomeRoutes(
       listMcpServers(db, userId).filter((s) => s.enabled).length +
       (opts.googleEnabled && hasOAuthToken(db, userId, 'google') ? 1 : 0);
 
+    const ownerSection = isOwner(db, userId)
+      ? `<section class="card"><h2>Owner</h2>
+          ${statusRow('Pending requests', 'Review access requests', '/users/pending')}
+        </section>`
+      : '';
+
     reply.type('text/html').send(
       layout(
         'Home',
@@ -37,7 +44,8 @@ export function registerHomeRoutes(
           ${statusRow('OpenRouter key', keyStatus, '/models')}
           ${statusRow('Models', `${esc(cfg.cheap_model)} · ${esc(cfg.strong_model)}`, '/models')}
           ${statusRow('Services', `${serviceCount} connected`, '/mcp')}
-        </section>`,
+        </section>
+        ${ownerSection}`,
         { active: 'home' },
       ),
     );

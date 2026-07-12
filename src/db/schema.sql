@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
   quiet_end INTEGER NOT NULL DEFAULT 8,
   heartbeat_interval_min INTEGER NOT NULL DEFAULT 30,
   allowlisted INTEGER NOT NULL DEFAULT 0,
+  is_owner INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
 
@@ -95,3 +96,23 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (user_id, provider)
 );
+
+-- Self-service onboarding: a stranger registers on the web, proves their phone
+-- via a channel contact-share, and the owner approves. One row per attempt.
+-- New table → applies cleanly to an existing DB on next boot.
+CREATE TABLE IF NOT EXISTS pending_registrations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,             -- normalized (digits only)
+  code TEXT NOT NULL UNIQUE,       -- unguessable; used in the deep link
+  channel TEXT NOT NULL DEFAULT 'telegram',
+  channel_user_id TEXT,           -- null until /start <code> binds the requester
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, -- null until bound
+  status TEXT NOT NULL DEFAULT 'awaiting_start',
+    -- awaiting_start -> awaiting_contact -> pending_approval -> approved | denied
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pending_reg_code ON pending_registrations(code);
+CREATE INDEX IF NOT EXISTS idx_pending_reg_contact
+  ON pending_registrations(channel, channel_user_id);

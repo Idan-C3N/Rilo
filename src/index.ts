@@ -4,6 +4,7 @@ import { initCrypto } from './crypto/encryption.js';
 import { openDb } from './db/db.js';
 import { createTelegramAdapter } from './channels/telegram.js';
 import { handleInbound } from './agent/dispatch.js';
+import { ensureOwner } from './db/users.js';
 import { runAgentTurn } from './agent/core.js';
 import type { GenerateFn } from './agent/core.js';
 import { maybeSummarize } from './agent/summarize.js';
@@ -30,6 +31,22 @@ const generate: GenerateFn = async (args) =>
 
 const adapter = createTelegramAdapter({ token: appCfg.telegramToken });
 
+// Seed the owner from OWNER_TELEGRAM_ID (idempotent). Without an owner nobody
+// can approve access requests, so warn loudly if it's unset.
+if (appCfg.ownerTelegramId) {
+  ensureOwner(db, appCfg.ownerTelegramId);
+} else {
+  console.warn('OWNER_TELEGRAM_ID is unset — nobody can approve access requests.');
+}
+
+// Fetch the bot username so registration deep links resolve. Best-effort: if
+// Telegram is unreachable at boot, links degrade gracefully (empty username).
+try {
+  await adapter.ensureBotUsername();
+} catch (err) {
+  console.warn('could not fetch bot username (registration links may be incomplete):', err);
+}
+
 const google =
   appCfg.googleClientId && appCfg.googleClientSecret
     ? { clientId: appCfg.googleClientId, clientSecret: appCfg.googleClientSecret }
@@ -50,6 +67,7 @@ adapter.onMessage((m) =>
       heartbeatDefaultMin: appCfg.heartbeatDefaultMin,
       maybeSummarize,
       webBaseUrl: appCfg.webBaseUrl,
+      ownerTelegramId: appCfg.ownerTelegramId,
       resolveDefaultModels: () => resolveDefaultModels(appCfg.defaultModelFamily),
     },
     m,
@@ -58,7 +76,13 @@ adapter.onMessage((m) =>
 
 seedHeartbeats(db, appCfg);
 startScheduler({ db, appCfg, adapter, generate, channel: adapter.channel, fireReminder, fireHeartbeat });
-await startWeb({ db, appCfg, port: appCfg.webPort });
+await startWeb({
+  db,
+  appCfg,
+  port: appCfg.webPort,
+  registrationLink: (code) => adapter.registrationLink(code),
+  notify: (channelUserId, text) => adapter.send(channelUserId, text),
+});
 
 // grammy's start() runs long polling; if the token is bad or Telegram is
 // unreachable it rejects (e.g. getMe 401). Surface it clearly instead of a

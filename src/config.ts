@@ -15,6 +15,7 @@ export interface AppConfig {
   googleClientSecret?: string;
   enableWebOauth: boolean;
   defaultModelFamily: string;
+  ownerTelegramId?: string;
 }
 
 function req(env: NodeJS.ProcessEnv, key: string): string {
@@ -42,5 +43,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
     googleClientSecret: env.GOOGLE_CLIENT_SECRET || undefined,
     enableWebOauth: env.ENABLE_WEB_OAUTH === 'true',
     defaultModelFamily: env.DEFAULT_MODEL_FAMILY || 'anthropic/',
+    ownerTelegramId: env.OWNER_TELEGRAM_ID || undefined,
   };
 }

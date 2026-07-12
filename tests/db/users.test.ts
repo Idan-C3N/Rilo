@@ -6,6 +6,9 @@ import {
   getExternalId,
   isAllowlisted,
   setAllowlisted,
+  setOwner,
+  isOwner,
+  ensureOwner,
 } from '../../src/db/users.js';
 
 let db: DB;
@@ -39,5 +42,27 @@ describe('users repo', () => {
     const u = createUserWithIdentity(db, { channel: 'telegram', externalId: 'tg', name: 'C', heartbeat_interval_min: 15 });
     expect(getExternalId(db, u.id, 'telegram')).toBe('tg');
     expect(getExternalId(db, u.id, 'whatsapp')).toBeUndefined();
+  });
+
+  it('setOwner / isOwner round-trip; not an owner by default', () => {
+    const u = createUserWithIdentity(db, { channel: 'telegram', externalId: '9', heartbeat_interval_min: 30 });
+    expect(isOwner(db, u.id)).toBe(false);
+    setOwner(db, u.id, true);
+    expect(isOwner(db, u.id)).toBe(true);
+  });
+
+  it('ensureOwner creates, allowlists and marks the owner', () => {
+    const u = ensureOwner(db, '4242');
+    expect(getUserByIdentity(db, 'telegram', '4242')?.id).toBe(u.id);
+    expect(isAllowlisted(db, u.id)).toBe(true);
+    expect(isOwner(db, u.id)).toBe(true);
+  });
+
+  it('ensureOwner is idempotent — no duplicate user on second call', () => {
+    const first = ensureOwner(db, '4242');
+    const second = ensureOwner(db, '4242');
+    expect(second.id).toBe(first.id);
+    const count = (db.prepare('SELECT COUNT(*) c FROM users').get() as any).c;
+    expect(count).toBe(1);
   });
 });

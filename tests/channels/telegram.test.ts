@@ -1,19 +1,21 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTelegramAdapter } from '../../src/channels/telegram.js';
 
-function fakeBot() {
+function fakeBot(opts: { username?: string } = {}) {
   const calls: any = { sendMessage: [], sendChatAction: [] };
-  let handler: (ctx: any) => Promise<void>;
+  const handlers: Record<string, (ctx: any) => Promise<void>> = {};
   return {
     calls,
-    fire: (ctx: any) => handler(ctx),
+    fire: (ctx: any) => handlers['message:text']!(ctx),
+    fireEvent: (event: string, ctx: any) => handlers[event]!(ctx),
     bot: {
-      on: (_event: string, cb: any) => { handler = cb; },
+      on: (event: string, cb: any) => { handlers[event] = cb; },
       start: () => {},
       stop: async () => {},
       api: {
         sendMessage: async (id: string, text: string, other?: any) => { calls.sendMessage.push([id, text, other]); },
         sendChatAction: async (id: string, a: string) => { calls.sendChatAction.push([id, a]); },
+        getMe: async () => ({ username: opts.username ?? 'rilo_bot' }),
       },
     },
   };
@@ -71,6 +73,62 @@ describe('telegram adapter', () => {
     vi.advanceTimersByTime(8000);
     expect(f.calls.sendChatAction.length).toBe(2);
     vi.useRealTimers();
+  });
+
+  it('registrationLink builds a t.me deep link once the bot username is known', async () => {
+    const f = fakeBot({ username: 'rilo_bot' });
+    const adapter = createTelegramAdapter({ token: 'x', makeBot: () => f.bot as any });
+    await adapter.ensureBotUsername();
+    expect(adapter.registrationLink('abc123')).toBe('https://t.me/rilo_bot?start=abc123');
+  });
+
+  it('requestContact sends a message with a request_contact keyboard button', async () => {
+    const f = fakeBot();
+    const adapter = createTelegramAdapter({ token: 'x', makeBot: () => f.bot as any });
+    await adapter.requestContact('55', 'Tap to share your number.');
+    const [id, text, other] = f.calls.sendMessage[0];
+    expect(id).toBe('55');
+    expect(text).toContain('Tap to share your number.');
+    const btn = other.reply_markup.keyboard[0][0];
+    expect(btn.request_contact).toBe(true);
+  });
+
+  it('maps an inbound shared contact to InboundMessage.contact', async () => {
+    const f = fakeBot();
+    const adapter = createTelegramAdapter({ token: 'x', makeBot: () => f.bot as any });
+    const received: any[] = [];
+    adapter.onMessage(async (m) => { received.push(m); });
+    adapter.start();
+    await f.fireEvent('message:contact', {
+      from: { id: 66, first_name: 'Cara' },
+      message: { contact: { phone_number: '+972501234567', user_id: 66 } },
+    });
+    expect(received[0]).toEqual({
+      channel: 'telegram',
+      channelUserId: '66',
+      text: '',
+      name: 'Cara',
+      contact: { phone: '+972501234567' },
+    });
+  });
+
+  it('ignores a contact card that is not the sender\'s own (spoof guard)', async () => {
+    const f = fakeBot();
+    const adapter = createTelegramAdapter({ token: 'x', makeBot: () => f.bot as any });
+    const received: any[] = [];
+    adapter.onMessage(async (m) => { received.push(m); });
+    adapter.start();
+    // Attached contact card carrying someone else's number: user_id absent /
+    // mismatched. Must NOT be treated as a verified phone share.
+    await f.fireEvent('message:contact', {
+      from: { id: 66, first_name: 'Cara' },
+      message: { contact: { phone_number: '+972509999999', user_id: 77 } },
+    });
+    await f.fireEvent('message:contact', {
+      from: { id: 66, first_name: 'Cara' },
+      message: { contact: { phone_number: '+972509999999' } },
+    });
+    expect(received).toEqual([]);
   });
 
   it('double start() does not leak a second interval', () => {
