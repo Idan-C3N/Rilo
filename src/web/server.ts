@@ -11,6 +11,8 @@ import { registerHomeRoutes } from './routes/home.js';
 import { registerModelsRoutes } from './routes/models.js';
 import { registerMcpRoutes } from './routes/mcp.js';
 import { registerOauthRoutes, type MakeOauthClient } from './routes/oauth.js';
+import { registerRegisterRoutes } from './routes/register.js';
+import { registerPendingRoutes } from './routes/pending.js';
 import { layout, flash } from './render.js';
 import { getModelIds } from '../openrouter/catalog.js';
 
@@ -28,12 +30,16 @@ export interface WebDeps {
   getModels?: () => Promise<string[]>;
   /** Injectable OAuth client factory (tests stub the token exchange). */
   makeOauthClient?: MakeOauthClient;
+  /** Build the registration deep link (wired from the channel adapter). */
+  registrationLink?: (code: string) => string;
+  /** Notify a requester over their channel on approve/deny (best-effort). */
+  notify?: (channelUserId: string, text: string) => Promise<void>;
 }
 
 // Vendored htmx, read once at startup and served from memory (no build step).
 const HTMX_JS = readFileSync(new URL('./vendor/htmx.min.js', import.meta.url), 'utf8');
 
-const PUBLIC_PATHS = new Set(['/login', '/vendor/htmx.min.js', '/oauth/google/callback']);
+const PUBLIC_PATHS = new Set(['/login', '/register', '/vendor/htmx.min.js', '/oauth/google/callback']);
 
 export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
   const app = Fastify();
@@ -114,6 +120,10 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
     googleClientSecret: deps.appCfg.googleClientSecret,
     makeClient: deps.makeOauthClient,
   });
+  registerRegisterRoutes(app, deps.db, {
+    registrationLink: deps.registrationLink ?? ((code) => `/register?code=${code}`),
+  });
+  registerPendingRoutes(app, deps.db, { notify: deps.notify });
   return app;
 }
 

@@ -8,6 +8,7 @@ export interface User {
   quiet_end: number;
   heartbeat_interval_min: number;
   allowlisted: number;
+  is_owner: number;
 }
 
 export function createUser(
@@ -68,6 +69,36 @@ export function isAllowlisted(db: DB, userId: number): boolean {
 
 export function setAllowlisted(db: DB, userId: number, on: boolean): void {
   db.prepare('UPDATE users SET allowlisted = ? WHERE id = ?').run(on ? 1 : 0, userId);
+}
+
+export function isOwner(db: DB, userId: number): boolean {
+  const row = db.prepare('SELECT is_owner FROM users WHERE id = ?').get(userId) as
+    | { is_owner: number }
+    | undefined;
+  return !!row && row.is_owner === 1;
+}
+
+export function setOwner(db: DB, userId: number, on: boolean): void {
+  db.prepare('UPDATE users SET is_owner = ? WHERE id = ?').run(on ? 1 : 0, userId);
+}
+
+/**
+ * Idempotently ensure the owner exists for a Telegram external id: create the
+ * user + identity if missing, then allowlist and mark as owner. Safe to call on
+ * every boot.
+ */
+export function ensureOwner(db: DB, telegramExternalId: string): User {
+  let user = getUserByIdentity(db, 'telegram', telegramExternalId);
+  if (!user) {
+    user = createUserWithIdentity(db, {
+      channel: 'telegram',
+      externalId: telegramExternalId,
+      heartbeat_interval_min: 30,
+    });
+  }
+  setAllowlisted(db, user.id, true);
+  setOwner(db, user.id, true);
+  return getUserById(db, user.id)!;
 }
 
 export function listUsers(db: DB): User[] {

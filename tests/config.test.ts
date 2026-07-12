@@ -27,6 +27,11 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...base, DEFAULT_MODEL_FAMILY: 'openai/' } as any).defaultModelFamily).toBe('openai/');
   });
 
+  it('maps OWNER_TELEGRAM_ID to ownerTelegramId (optional)', () => {
+    expect(loadConfig(base as any).ownerTelegramId).toBeUndefined();
+    expect(loadConfig({ ...base, OWNER_TELEGRAM_ID: '4242' } as any).ownerTelegramId).toBe('4242');
+  });
+
   it('enableWebOauth defaults to false and is true only for the exact string "true"', () => {
     expect(loadConfig(base as any).enableWebOauth).toBe(false);
     expect(loadConfig({ ...base, ENABLE_WEB_OAUTH: 'true' } as any).enableWebOauth).toBe(true);

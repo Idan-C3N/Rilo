@@ -3,6 +3,8 @@ export interface InboundMessage {
   channelUserId: string;
   text: string;
   name?: string;
+  /** Set when the inbound is a shared contact (channel-verified phone). */
+  contact?: { phone: string };
 }
 
 export interface SendOptions {
@@ -21,4 +23,8 @@ export interface ChannelAdapter {
   stop(): Promise<void>;
   send(channelUserId: string, text: string, opts?: SendOptions): Promise<void>;
   onMessage(handler: (m: InboundMessage) => Promise<void>): void;
+  /** Build the channel's registration deep link for a code. */
+  registrationLink(code: string): string;
+  /** Prompt the user with the channel's share-phone affordance. */
+  requestContact(channelUserId: string, text: string): Promise<void>;
 }
