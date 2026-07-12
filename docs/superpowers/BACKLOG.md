@@ -20,12 +20,20 @@ sketch, files touched, open decisions, and how to parallelize across agents.
 - **`dev` script fix** — `npm run dev` now loads `.env` (was crashing on missing `DB_PATH`) — pushed.
 - **Public repo** — pushed to `github.com/Idan-C3N/Rilo` (PUBLIC). History verified secret-clean; all commits re-identified to the personal `Idan-C3N <idanco32@gmail.com>` (work identity scrubbed off).
 - **#1 — Google web OAuth** (opt-in `ENABLE_WEB_OAUTH`; `/oauth/google/start`+`/callback`; signed-cookie CSRF `state`; loopback/paste kept as firewalled fallback; Slack still paste) — **merged via PR #1** + manually verified end-to-end. Spec: `2026-07-11-google-web-oauth-design.md`.
+- **#9 — onboarding + owner approval** (self-service `/register`; `OWNER_TELEGRAM_ID` auto-owned on boot; owner `/approve|/deny` + web Pending list) — merged (PR #3).
+- **#11 — magic-link login** (link's token is the sole factor; dropped the 6-digit code) — merged (PR #2).
+- **Public HTTPS + web OAuth LIVE on the box** — Caddy TLS overlay (`compose.caddy.yml` + `deploy/Caddyfile`, auto Let's Encrypt on **`rilo.my`**); Hetzner firewall 80/443 opened + DNS zone/A-record via `hcloud`; `ENABLE_WEB_OAUTH=true` with a Google **Web** OAuth client. Verified end-to-end in prod (2026-07-12).
+- **Live-box migration systemd → Docker Compose** — done 2026-07-12 (DB + `.env` preserved; systemd unit disabled). The box now runs `docker compose -f compose.yml -f compose.caddy.yml`. `rilo-deployment` memory updated with the new redeploy command + gotchas.
+- **Semantic memory recall via embeddings** — bundled internal **TEI `multilingual-e5-small`** (384-d) container; vectors as `BLOB` in the `memory` table, brute-force cosine, best-effort embed-on-write + boot backfill + substring fallback. Merged + live; cross-lingual recall verified (English query → Hebrew memories). Spec/plan in `docs/superpowers/`.
+- **Structured logging (pino)** — full request-lifecycle logging keyed by a per-message `turnId` (`inbound` / `turn.start` / `llm.done` with tools + token usage / `reply` / errors); token+phone redaction; `LOG_LEVEL` env; apology-to-user on turn failure (was silent); `GenerateFn` widened to surface the SDK's `usage`+`steps`. Merged + live.
 
 ## New follow-ups (from the deploy/OSS session)
 
-- **Live-box migration** — the Hetzner VPS still runs the **old systemd** setup. Migrate it to Compose using the DB-backup-first sequence in the single-compose spec. Until then the `rilo-deployment` memory's redeploy command (`deploy.sh` + systemd) is still what the live box uses.
-- **Pin the SearXNG image** — `compose.yml` uses `searxng/searxng:latest`; pin a tag before trusting it in prod.
+- ~~**Live-box migration**~~ — **done** (2026-07-12, see Done). The box runs Docker Compose + Caddy public HTTPS; systemd retired.
+- **Pin container images** — `compose.yml` uses `searxng/searxng:latest` **and** `text-embeddings-inference:cpu-latest`; pin tags for both before trusting them in prod.
 - **README quickstart** — the public repo's root README still predates all this (folded into #5).
+- **Recall threshold tuning** — semantic recall defaults to cosine `threshold = 0.80`; live e5 scores are compressed, so borderline-relevant memories (~0.78) get dropped. Lower to ~**0.72** (and reconsider `k`). Small edit in `db/memory.ts` `recallVector`.
+- **`mkey` consistency (cosmetic)** — the agent labels memories inconsistently (English vs Hebrew keys). Harmless (recall is by vector), but a prompt tweak could standardize.
 
 ## File-contention map (why parallelism is limited)
 
@@ -233,10 +241,11 @@ vs instructs; (c) where it lives (repo `skills/` vs the agent's global skills);
 
 ## Suggested sequencing (updated)
 
-1. ~~#8 ∥ #1~~ — **both merged** to `main`. Public repo pushed.
-2. **#3 security pass** — pressing now that the repo is public. Audit sessions/CSRF/rate-limit/deps/error-leak; fix; test.
-3. **#9** onboarding, then **#11** magic-link (or combine) — serialize (both touch `dispatch.ts`/login).
-4. **#12 shared/household memory** — after the auth/onboarding cluster (depends on how users/groups are managed; touches `dispatch.ts` + `db/memory.ts`).
-5. **#5 README** rewrite (reflect #8 SearXNG default, single-Compose deploy, #1 outcome).
-6. ~~**Live-box migration** systemd → Compose~~ — **done** (migrated 2026-07-12; box now runs Compose + Caddy public HTTPS + web OAuth + bundled embed/searxng).
+1. ~~#8 ∥ #1~~ — **both merged**. Public repo pushed.
+2. ~~#9 onboarding + #11 magic-link~~ — **both merged** (PR #3, PR #2).
+3. ~~Live-box migration + public HTTPS/web-OAuth + embeddings + logging~~ — **all merged + live** (2026-07-12).
+4. **#3 security pass** — pressing now that the repo is public **and internet-exposed** (Caddy on 80/443). Audit sessions/CSRF/rate-limit/deps/error-leak; fix; test. **Do next.**
+5. **#12 shared/household memory** — after security; touches `dispatch.ts` + `db/memory.ts` (now also the embedding columns).
+6. **#5 README** rewrite (reflect SearXNG default, single-Compose + Caddy deploy, web-OAuth, embeddings).
 7. **#13 deploy skill** — capture the now-proven deploy runbook as a guided skill.
+8. **Small follow-ups** — pin image tags; recall threshold 0.80→~0.72.
