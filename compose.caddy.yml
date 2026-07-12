@@ -1,9 +1,9 @@
-# TLS reverse-proxy overlay for the PUBLIC deployment (rilo.my).
+# TLS reverse-proxy overlay for the PUBLIC deployment.
 # Server-only — layer it over compose.yml:
-#   docker compose -f compose.yml -f compose.caddy.yml up -d --build
+#   DOMAIN=<your-domain> docker compose -f compose.yml -f compose.caddy.yml up -d --build
 #
 # Caddy terminates HTTPS on 80/443 (auto Let's Encrypt) and proxies to the app
-# container on its internal port 8080. Requires: DNS A record rilo.my -> host,
+# container on its internal port 8080. Requires: a DNS A record <DOMAIN> -> host,
 # and inbound 80+443 open to the world (ACME). Plain local `docker compose up`
 # (compose.yml alone) is unaffected — no Caddy, app still on localhost:8080.
 services:
@@ -12,6 +12,9 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN}
+      - ACME_EMAIL=${ACME_EMAIL}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data       # persisted certs — survives redeploys, avoids ACME rate limits
