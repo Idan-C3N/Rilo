@@ -196,6 +196,41 @@ workstream's final review passes (same subagent-driven flow used so far).
 
 ---
 
+## #13 — Deploy skill: guide agents to deploy Rilo  ·  effort: S-M  ·  needs brainstorm
+
+**Goal:** A reusable **skill** (superpowers-style `SKILL.md`) that walks an agent
+through deploying this personal assistant end-to-end, so a fresh agent (or a new
+self-hoster's agent) can stand Rilo up without rediscovering the whole runbook.
+
+**Current:** deploy knowledge is scattered — `deploy/README.md` (Compose +
+Caddy + OAuth prereqs), `deploy/provision.sh`, and the `rilo-deployment` agent
+memory (server IP, firewall, hcloud, redeploy command). No single guided
+procedure; the last two deploys (systemd→Compose migration, public-HTTPS + web
+OAuth) were done ad-hoc from live investigation.
+
+**Approach sketch (resolve in brainstorm):**
+- Encode the real procedure we ran: provision box → Docker Compose up → data/.env
+  preserve → firewall (Hetzner 80/443 + SSH/8080) → DNS zone + A record → Caddy
+  TLS overlay (`compose.caddy.yml`) → `ENABLE_WEB_OAUTH` + Google Web client →
+  bundled `embed`/`searxng` containers → verify (cert, `/health`, bot polling).
+- Capture the **gotchas hit live**: container uid 1001 vs host data uid → chown;
+  `.env` trailing-newline append bug; `!reset` app ports under the overlay;
+  Telegram getUpdates single-poller (stop old process before new).
+- Include verification commands + a rollback path (backup dir, revert overlay).
+- Decide scope: generic "deploy anywhere" vs Hetzner-specific; whether it drives
+  the firewall via `hcloud` or documents console steps.
+
+**Open decisions:** (a) generic vs Hetzner-opinionated; (b) how much it automates
+vs instructs; (c) where it lives (repo `skills/` vs the agent's global skills);
+(d) how it consumes per-install secrets/instance facts (`instance.local.md`).
+
+**Files:** new `SKILL.md` (+ any helper scripts), references into `deploy/`.
+**No app tests** (docs/skill); validate by having an agent follow it on a fresh box.
+
+**Conflicts:** none (additive docs/skill).
+
+---
+
 ## Suggested sequencing (updated)
 
 1. ~~#8 ∥ #1~~ — **both merged** to `main`. Public repo pushed.
@@ -203,4 +238,5 @@ workstream's final review passes (same subagent-driven flow used so far).
 3. **#9** onboarding, then **#11** magic-link (or combine) — serialize (both touch `dispatch.ts`/login).
 4. **#12 shared/household memory** — after the auth/onboarding cluster (depends on how users/groups are managed; touches `dispatch.ts` + `db/memory.ts`).
 5. **#5 README** rewrite (reflect #8 SearXNG default, single-Compose deploy, #1 outcome).
-6. **Live-box migration** systemd → Compose (when convenient; DB-backup first).
+6. ~~**Live-box migration** systemd → Compose~~ — **done** (migrated 2026-07-12; box now runs Compose + Caddy public HTTPS + web OAuth + bundled embed/searxng).
+7. **#13 deploy skill** — capture the now-proven deploy runbook as a guided skill.
