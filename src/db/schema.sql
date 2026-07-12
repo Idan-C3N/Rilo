@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS memory (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   mkey TEXT,
   text TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  embedding BLOB
 );
 CREATE INDEX IF NOT EXISTS idx_memory_user ON memory(user_id);
 

@@ -24,11 +24,17 @@ export function openDb(path: string): DB {
 // Idempotent column migrations for DBs created before a column existed.
 // `CREATE TABLE IF NOT EXISTS` never alters an existing table, so new columns
 // on existing tables need an explicit ALTER guarded by a presence check.
-function migrate(db: DB): void {
+export function migrate(db: DB): void {
   const userCols = new Set(
     (db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map((c) => c.name),
   );
   if (!userCols.has('is_owner')) {
     db.exec('ALTER TABLE users ADD COLUMN is_owner INTEGER NOT NULL DEFAULT 0');
+  }
+  const memCols = new Set(
+    (db.prepare('PRAGMA table_info(memory)').all() as { name: string }[]).map((c) => c.name),
+  );
+  if (!memCols.has('embedding')) {
+    db.exec('ALTER TABLE memory ADD COLUMN embedding BLOB');
   }
 }
