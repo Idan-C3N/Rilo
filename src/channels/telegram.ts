@@ -61,16 +61,19 @@ export function createTelegramAdapter(
     start: () => bot.start(),
     stop: () => bot.stop(),
     onMessage: (h) => { handler = h; },
-    send: async (channelUserId, text) => {
+    send: async (channelUserId, text, opts) => {
+      // Telegram fetches URLs to build link previews — for a one-time login link
+      // that prefetch would consume the token. Callers can suppress it.
+      const extra = opts?.disableLinkPreview ? { link_preview_options: { is_disabled: true } } : {};
       // LLM emits standard Markdown; Telegram needs MarkdownV2 with strict
       // escaping. Convert, then send. On any parse failure fall back to plain
       // so the message is never lost.
       try {
         const md = telegramifyMarkdown(text, 'escape');
-        await bot.api.sendMessage(channelUserId, md, { parse_mode: 'MarkdownV2' });
+        await bot.api.sendMessage(channelUserId, md, { parse_mode: 'MarkdownV2', ...extra });
       } catch (err) {
         console.error(`markdown send failed for ${channelUserId}, sending plain:`, err);
-        await bot.api.sendMessage(channelUserId, text);
+        await bot.api.sendMessage(channelUserId, text, extra);
       }
     },
     typingFor: (channelUserId): TypingController => {

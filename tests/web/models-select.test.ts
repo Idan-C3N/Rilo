@@ -3,7 +3,7 @@ import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
 import { createUserWithIdentity } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
-import { startLogin, verifyCode } from '../../src/db/sessions.js';
+import { startLogin, verifyByToken } from '../../src/db/sessions.js';
 import { setModels } from '../../src/db/config.js';
 import { buildWebApp } from '../../src/web/server.js';
 
@@ -15,9 +15,8 @@ beforeAll(async () => {
 beforeEach(async () => {
   db = openDb(':memory:');
   uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
-  const { token, code } = startLogin(db, uid);
-  verifyCode(db, token, code);
-  cookie = `token=${token}`;
+  const { token } = startLogin(db, uid);
+  cookie = `token=${verifyByToken(db, token)}`;
 });
 
 const IDS = ['anthropic/claude-haiku-4.5', 'anthropic/claude-sonnet-5'];

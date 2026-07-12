@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import type { DB } from '../db/db.js';
 import type { AppConfig } from '../config.js';
 import { sessionUserId } from './auth.js';
-import { verifyCode } from '../db/sessions.js';
+import { verifyByToken } from '../db/sessions.js';
 import { registerHomeRoutes } from './routes/home.js';
 import { registerModelsRoutes } from './routes/models.js';
 import { registerMcpRoutes } from './routes/mcp.js';
@@ -58,37 +58,34 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
     (req as any).userId = userId;
   });
 
-  // Login: GET shows the code form (token comes from the query, stored in cookie), POST verifies.
+  // Magic-link login: the link's token is the sole factor. GET verifies it,
+  // rotates to a fresh session token, sets the cookie, and redirects home.
   app.get<{ Querystring: { token?: string } }>('/login', async (req, reply) => {
-    if (req.query.token) reply.setCookie('token', req.query.token, { path: '/', httpOnly: true, sameSite: 'lax' });
-    reply.type('text/html').send(
-      layout(
-        'Login',
-        `<div class="card"><h2>Enter your code</h2>
-        <p class="muted">Enter the 6-digit code Rilo sent you.</p>
-        <form method="post" action="/login">
-          <label>6-digit code<input name="code" inputmode="numeric" pattern="[0-9]{6}" autofocus></label>
-          <button type="submit">Verify</button>
-        </form></div>`,
-        { bare: true },
-      ),
-    );
-  });
-
-  app.post<{ Body: { code: string } }>('/login', async (req, reply) => {
-    const token = req.cookies.token;
-    if (token && verifyCode(deps.db, token, req.body.code)) {
-      reply.redirect('/');
-    } else {
+    if (req.query.token) {
+      const sessionToken = verifyByToken(deps.db, req.query.token);
+      if (sessionToken) {
+        reply.setCookie('token', sessionToken, { path: '/', httpOnly: true, sameSite: 'lax' });
+        reply.redirect('/');
+        return;
+      }
       reply.type('text/html').send(
         layout(
           'Login',
-          `<div class="card">${flash('error', 'Invalid or expired code.')}
-          <a href="/login">Try again</a></div>`,
+          `<div class="card">${flash('error', 'This login link is invalid or expired.')}
+          <p class="muted">Send <code>/login</code> to Rilo on Telegram for a new one.</p></div>`,
           { bare: true },
         ),
       );
+      return;
     }
+    reply.type('text/html').send(
+      layout(
+        'Login',
+        `<div class="card"><h2>Check Telegram</h2>
+        <p class="muted">Open the login link Rilo sent you on Telegram to sign in.</p></div>`,
+        { bare: true },
+      ),
+    );
   });
 
   app.get('/logout', async (_req, reply) => {

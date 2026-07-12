@@ -35,6 +35,18 @@ describe('telegram adapter', () => {
     expect(other).toEqual({ parse_mode: 'MarkdownV2' });
   });
 
+  it('disableLinkPreview passes link_preview_options; default does not', async () => {
+    const f = fakeBot();
+    const adapter = createTelegramAdapter({ token: 'x', makeBot: () => f.bot as any });
+    await adapter.send('42', 'http://host/login?token=abc', { disableLinkPreview: true });
+    const [, , other] = f.calls.sendMessage[0];
+    expect(other).toMatchObject({ parse_mode: 'MarkdownV2', link_preview_options: { is_disabled: true } });
+
+    await adapter.send('42', 'plain');
+    const [, , other2] = f.calls.sendMessage[1];
+    expect(other2).toEqual({ parse_mode: 'MarkdownV2' });
+  });
+
   it('converts markdown bold to Telegram MarkdownV2', async () => {
     const f = fakeBot();
     const adapter = createTelegramAdapter({ token: 'x', makeBot: () => f.bot as any });
