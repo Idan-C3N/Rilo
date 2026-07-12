@@ -60,7 +60,7 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
 
   // Login: GET shows the code form (token comes from the query, stored in cookie), POST verifies.
   app.get<{ Querystring: { token?: string } }>('/login', async (req, reply) => {
-    if (req.query.token) reply.setCookie('token', req.query.token, { path: '/', httpOnly: true });
+    if (req.query.token) reply.setCookie('token', req.query.token, { path: '/', httpOnly: true, sameSite: 'lax' });
     reply.type('text/html').send(
       layout(
         'Login',
