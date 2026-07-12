@@ -37,4 +37,9 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...base, ENABLE_WEB_OAUTH: 'true' } as any).enableWebOauth).toBe(true);
     expect(loadConfig({ ...base, ENABLE_WEB_OAUTH: '1' } as any).enableWebOauth).toBe(false);
   });
+
+  it('maps EMBED_URL to embedUrl (optional)', () => {
+    expect(loadConfig(base as any).embedUrl).toBeUndefined();
+    expect(loadConfig({ ...base, EMBED_URL: 'http://embed:80' } as any).embedUrl).toBe('http://embed:80');
+  });
 });

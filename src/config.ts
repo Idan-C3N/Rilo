@@ -16,6 +16,7 @@ export interface AppConfig {
   enableWebOauth: boolean;
   defaultModelFamily: string;
   ownerTelegramId?: string;
+  embedUrl?: string;
 }
 
 function req(env: NodeJS.ProcessEnv, key: string): string {
@@ -44,5 +45,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
     enableWebOauth: env.ENABLE_WEB_OAUTH === 'true',
     defaultModelFamily: env.DEFAULT_MODEL_FAMILY || 'anthropic/',
     ownerTelegramId: env.OWNER_TELEGRAM_ID || undefined,
+    embedUrl: env.EMBED_URL || undefined,
   };
 }

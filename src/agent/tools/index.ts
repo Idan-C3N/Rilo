@@ -2,6 +2,7 @@ import type { ToolSet } from 'ai';
 import type { DB } from '../../db/db.js';
 import { makeRemindTool } from './remind.js';
 import { makeRememberTool, makeRecallTool } from './memory.js';
+import type { Embedder } from '../embeddings.js';
 import { makeTrackTool } from './track.js';
 import { makeWebSearchTool, tavilySearch, type SearchFn } from './websearch.js';
 import { makeGoogleTools } from './google.js';
@@ -24,13 +25,15 @@ export async function buildToolsFor(opts: {
   // Instance-level Google OAuth app credentials; Google tools are added only
   // when these are set AND the user has connected (stored a refresh token).
   google?: { clientId: string; clientSecret: string };
+  // Optional embedding backend; when present, memory tools use semantic recall.
+  embed?: Embedder;
   assemble?: (deps: { db: DB }, userId: number) => Promise<{ tools: ToolSet; closeAll: () => Promise<void> }>;
 }): Promise<BuiltTools> {
   const { db, userId } = opts;
   const builtIn: ToolSet = {
     remind: makeRemindTool(db, userId),
-    remember: makeRememberTool(db, userId),
-    recall: makeRecallTool(db, userId),
+    remember: makeRememberTool(db, userId, opts.embed),
+    recall: makeRecallTool(db, userId, opts.embed),
     track: makeTrackTool(db, userId),
   };
   const search = opts.search ?? (opts.webSearchKey ? tavilySearch(opts.webSearchKey) : undefined);

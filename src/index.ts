@@ -12,6 +12,8 @@ import { startScheduler } from './scheduler/scheduler.js';
 import { fireReminder } from './scheduler/fire.js';
 import { buildToolsFor } from './agent/tools/index.js';
 import { selectSearchBackend } from './agent/tools/websearch.js';
+import { makeEmbedder } from './agent/embeddings.js';
+import { backfillEmbeddings } from './agent/memory-embed.js';
 import { fireHeartbeat, seedHeartbeats } from './scheduler/heartbeat.js';
 import { startWeb } from './web/server.js';
 import { resolveDefaultModels } from './openrouter/catalog.js';
@@ -52,8 +54,9 @@ const google =
     ? { clientId: appCfg.googleClientId, clientSecret: appCfg.googleClientSecret }
     : undefined;
 const search = selectSearchBackend(appCfg);
+const embed = appCfg.embedUrl ? makeEmbedder(appCfg.embedUrl) : undefined;
 const buildTools = (userId: number) =>
-  buildToolsFor({ db, userId, search, google });
+  buildToolsFor({ db, userId, search, google, embed });
 
 adapter.onMessage((m) =>
   handleInbound(
@@ -75,6 +78,15 @@ adapter.onMessage((m) =>
 );
 
 seedHeartbeats(db, appCfg);
+
+// Best-effort: embed any memories saved before/without the embed server
+// (existing rows, or rows written while it was down). Non-blocking.
+if (embed) {
+  backfillEmbeddings(db, embed)
+    .then((n) => n && console.log(`memory: backfilled ${n} embeddings`))
+    .catch((err) => console.warn('memory: embedding backfill failed:', err));
+}
+
 startScheduler({ db, appCfg, adapter, generate, channel: adapter.channel, fireReminder, fireHeartbeat });
 await startWeb({
   db,
