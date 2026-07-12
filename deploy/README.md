@@ -33,7 +33,7 @@ Web search needs a backend here (SearXNG isn't running): set `SEARCH_BACKEND=tav
 or `GOOGLE_SEARCH_KEY`+`GOOGLE_SEARCH_CX` in `.env`, or start a SearXNG container
 yourself and point `SEARXNG_URL` at it.
 
-## Server (any Ubuntu/Debian VPS, e.g. Hetzner)
+## Server (any Ubuntu/Debian VPS)
 
 **One-time provision** — on a fresh box, as root:
 
@@ -59,8 +59,8 @@ ssh <box> 'cd /opt/personal-agent && git pull && docker compose up -d --build'
 
 ### Locking it down (firewall)
 
-Rilo expects to sit behind a host firewall. On Hetzner, create a Cloud Firewall
-(console or API) restricting inbound to your own IP:
+Rilo expects to sit behind a host firewall. At your VPS provider, create a
+firewall (console or API) restricting inbound to your own IP:
 
 - **TCP 22 (SSH)** — source: your IP only
 - **TCP 8080 (web UI)** — source: your IP only
@@ -89,8 +89,8 @@ Leave `ENABLE_WEB_OAUTH` unset (default `false`) to keep the loopback/paste flow
 ### Public deploy with the Caddy overlay
 
 Prereqs: a DNS A record for your domain → the box, and inbound **80 + 443 open
-to the world** (Let's Encrypt ACME) — add these to the Hetzner firewall
-alongside the SSH/8080 owner-only rules above. Then set in `.env`:
+to the world** (Let's Encrypt ACME) — add these to your host firewall alongside
+the SSH/8080 owner-only rules above. Then set in `.env`:
 
 ```
 WEB_BASE_URL=https://<your-domain>
@@ -105,8 +105,8 @@ docker compose -f compose.yml -f compose.caddy.yml up -d --build
 ```
 
 Use the same two `-f` files on every redeploy, or the app re-publishes 8080 and
-Caddy stops. `deploy/Caddyfile` hardcodes the domain + ACME email — edit it for
-your own host.
+Caddy stops. The overlay reads `DOMAIN` (and optional `ACME_EMAIL`) from `.env` —
+no file edits needed.
 
 ---
 
