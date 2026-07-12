@@ -4,6 +4,7 @@ import { makeRemindTool } from './remind.js';
 import { makeRememberTool, makeRecallTool } from './memory.js';
 import type { Embedder } from '../embeddings.js';
 import { makeTrackTool } from './track.js';
+import { makeSpacesTool } from './spaces.js';
 import { makeWebSearchTool, tavilySearch, type SearchFn } from './websearch.js';
 import { makeGoogleTools } from './google.js';
 import { makeGoogleTokenProvider } from '../google/client.js';
@@ -35,6 +36,7 @@ export async function buildToolsFor(opts: {
     remember: makeRememberTool(db, userId, opts.embed),
     recall: makeRecallTool(db, userId, opts.embed),
     track: makeTrackTool(db, userId),
+    spaces: makeSpacesTool(db, userId),
   };
   const search = opts.search ?? (opts.webSearchKey ? tavilySearch(opts.webSearchKey) : undefined);
   if (search) {
