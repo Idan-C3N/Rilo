@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 import type { DB } from './db.js';
 import { addMember } from './spaces.js';
+import { isAllowlisted } from './users.js';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no O/0/I/1/L
 const CODE_LEN = 6;
@@ -59,6 +60,7 @@ export function redeemInvite(
   userId: number,
 ): { ok: boolean; spaceId?: number; error?: string } {
   const tx = db.transaction(() => {
+    if (!isAllowlisted(db, userId)) return { ok: false, error: 'Not allowed.' };
     const inv = getValidInvite(db, code);
     if (!inv) return { ok: false, error: 'Invalid, expired, or already-used code.' };
     addMember(db, inv.space_id, userId);

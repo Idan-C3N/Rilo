@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUserWithIdentity } from '../../src/db/users.js';
+import { createUserWithIdentity, setAllowlisted } from '../../src/db/users.js';
 import { createSpace, isMember } from '../../src/db/spaces.js';
 import {
   createInvite, getValidInvite, redeemInvite, listActiveInvites,
@@ -11,6 +11,8 @@ beforeEach(() => {
   db = openDb(':memory:');
   owner = createUserWithIdentity(db, { channel: 'telegram', externalId: 'o', heartbeat_interval_min: 30 }).id;
   joiner = createUserWithIdentity(db, { channel: 'telegram', externalId: 'j', heartbeat_interval_min: 30 }).id;
+  setAllowlisted(db, owner, true);
+  setAllowlisted(db, joiner, true);
   spaceId = createSpace(db, { name: 'Home', createdBy: owner }).id;
 });
 
@@ -51,4 +53,13 @@ it('listActiveInvites excludes redeemed and expired codes', () => {
   redeemInvite(db, used, joiner);
   const active = listActiveInvites(db, spaceId).map((i) => i.code);
   expect(active).toEqual([live]);
+});
+
+it('redeemInvite rejects redemption by non-allowlisted users and leaves code unconsumed', () => {
+  const { code } = createInvite(db, { spaceId, createdBy: owner });
+  const nonAllowlisted = createUserWithIdentity(db, { channel: 'telegram', externalId: 'na', heartbeat_interval_min: 30 }).id;
+  const r = redeemInvite(db, code, nonAllowlisted);
+  expect(r).toEqual({ ok: false, error: 'Not allowed.' });
+  expect(isMember(db, spaceId, nonAllowlisted)).toBe(false);
+  expect(getValidInvite(db, code)).toBeDefined();  // code still valid/unconsumed
 });
