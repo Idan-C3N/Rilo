@@ -40,4 +40,20 @@ export function migrate(db: DB): void {
   if (!memCols.has('space_id')) {
     db.exec('ALTER TABLE memory ADD COLUMN space_id INTEGER REFERENCES spaces(id)');
   }
+  const jobCols = new Set(
+    (db.prepare('PRAGMA table_info(jobs)').all() as { name: string }[]).map((c) => c.name),
+  );
+  // Skip jobs column migration if table does not exist (PRAGMA returns no rows, size=0).
+  // In production, jobs table exists via schema.sql; in migrate-only unit tests it may be absent.
+  if (jobCols.size > 0) {
+    if (!jobCols.has('recurrence')) {
+      db.exec('ALTER TABLE jobs ADD COLUMN recurrence TEXT');
+    }
+    if (!jobCols.has('recurrence_until')) {
+      db.exec('ALTER TABLE jobs ADD COLUMN recurrence_until INTEGER');
+    }
+    if (!jobCols.has('recurrence_count')) {
+      db.exec('ALTER TABLE jobs ADD COLUMN recurrence_count INTEGER');
+    }
+  }
 }

@@ -34,7 +34,7 @@ function deps(decision: any) {
   } as any;
 }
 
-const job = () => ({ id: 1, user_id: uid, type: 'heartbeat' as const, fire_at: 0, payload: {}, status: 'pending' as const });
+const job = () => ({ id: 1, user_id: uid, type: 'heartbeat' as const, fire_at: 0, payload: {}, status: 'pending' as const, recurrence: null, recurrence_until: null, recurrence_count: null });
 
 describe('heartbeat', () => {
   it('reschedules the next heartbeat every fire', async () => {
