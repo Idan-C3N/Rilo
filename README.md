@@ -1,8 +1,8 @@
 # personal-agent
 
 A personal, multi-channel AI agent (Telegram now, web UI for config/login) with
-reminders, follow-ups, heartbeat self-checks, and MCP tool support. Runs via
-Docker Compose with SQLite storage.
+reminders, follow-ups, heartbeat self-checks, persistent memory (with shared
+household spaces), and MCP tool support. Runs via Docker Compose with SQLite storage.
 
 ## Setup
 
