@@ -40,6 +40,11 @@ export function migrate(db: DB): void {
   if (!memCols.has('space_id')) {
     db.exec('ALTER TABLE memory ADD COLUMN space_id INTEGER REFERENCES spaces(id)');
   }
+  // Index space_id here, not in schema.sql: on a pre-existing memory table the
+  // column only exists after the ALTER above, so indexing it during the schema
+  // exec (which runs before migrate) would throw "no such column: space_id".
+  // Idempotent, so fresh DBs (column from CREATE TABLE) get it here too.
+  db.exec('CREATE INDEX IF NOT EXISTS idx_memory_space ON memory(space_id)');
   const jobCols = new Set(
     (db.prepare('PRAGMA table_info(jobs)').all() as { name: string }[]).map((c) => c.name),
   );

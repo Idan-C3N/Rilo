@@ -69,7 +69,10 @@ CREATE TABLE IF NOT EXISTS memory (
   space_id INTEGER REFERENCES spaces(id)
 );
 CREATE INDEX IF NOT EXISTS idx_memory_user ON memory(user_id);
-CREATE INDEX IF NOT EXISTS idx_memory_space ON memory(space_id);
+-- idx_memory_space is created in db.ts migrate() AFTER the space_id column is
+-- ensured: on a pre-existing memory table (production DB from before #12) the
+-- column is added by an ALTER in migrate(), so indexing it here — before that
+-- runs — throws "no such column: space_id" and crash-loops the app.
 
 CREATE TABLE IF NOT EXISTS mcp_servers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
