@@ -57,3 +57,57 @@ describe('scheduler tick', () => {
     expect(dueJobs(db, 100).map((j) => j.id)).toEqual([bad]);
   });
 });
+
+describe('scheduler tick — recurrence', () => {
+  it('re-arms a recurring reminder in place instead of marking it done', async () => {
+    // fires every minute; user tz defaults to UTC
+    const id = addJob(db, { userId: uid, type: 'reminder', fireAt: 10, payload: { text: 'x' }, recurrence: '* * * * *' });
+    const { fired, d } = deps();
+    const now = Date.UTC(2026, 0, 1, 9, 0, 30); // 09:00:30
+    await tick(d as any, now);
+    expect(fired).toEqual([['reminder', id]]);
+    // still pending, fire_at advanced to the next minute (09:01:00)
+    const job = dueJobs(db, now + 3600_000).find((j) => j.id === id)!;
+    expect(job.status ?? 'pending').toBe('pending');
+    expect(job.fire_at).toBe(Date.UTC(2026, 0, 1, 9, 1, 0));
+  });
+
+  it('retires a recurring reminder when the count reaches 0', async () => {
+    const id = addJob(db, {
+      userId: uid, type: 'reminder', fireAt: 10, payload: { text: 'x' },
+      recurrence: '* * * * *', recurrenceCount: 1,
+    });
+    const { d } = deps();
+    await tick(d as any, Date.UTC(2026, 0, 1, 9, 0, 30));
+    expect(dueJobs(db, Date.UTC(2027, 0, 1)).find((j) => j.id === id)).toBeUndefined(); // done
+  });
+
+  it('retires a recurring reminder once the next occurrence passes recurrence_until', async () => {
+    const until = Date.UTC(2026, 0, 1, 9, 0, 45); // before the next minute boundary
+    const id = addJob(db, {
+      userId: uid, type: 'reminder', fireAt: 10, payload: { text: 'x' },
+      recurrence: '* * * * *', recurrenceUntil: until,
+    });
+    const { d } = deps();
+    await tick(d as any, Date.UTC(2026, 0, 1, 9, 0, 30));
+    expect(dueJobs(db, Date.UTC(2027, 0, 1)).find((j) => j.id === id)).toBeUndefined(); // done
+  });
+
+  it('a downtime gap produces one fire, not one per missed occurrence', async () => {
+    const id = addJob(db, { userId: uid, type: 'reminder', fireAt: 10, payload: { text: 'x' }, recurrence: '* * * * *' });
+    const { fired, d } = deps();
+    // Box was "down"; we tick once, far past many missed minutes.
+    await tick(d as any, Date.UTC(2026, 0, 1, 12, 0, 0));
+    expect(fired).toEqual([['reminder', id]]); // exactly one delivery
+    const job = dueJobs(db, Date.UTC(2027, 0, 1)).find((j) => j.id === id)!;
+    expect(job.fire_at).toBe(Date.UTC(2026, 0, 1, 12, 1, 0)); // next occurrence from now
+  });
+
+  it('one-shot reminders still fire exactly once (regression)', async () => {
+    const id = addJob(db, { userId: uid, type: 'reminder', fireAt: 10, payload: { text: 'x' } });
+    const { fired, d } = deps();
+    await tick(d as any, 100);
+    expect(fired).toEqual([['reminder', id]]);
+    expect(dueJobs(db, 100)).toEqual([]); // done, not re-armed
+  });
+});
