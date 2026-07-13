@@ -1,6 +1,7 @@
 import type { ToolSet } from 'ai';
 import type { DB } from '../../db/db.js';
 import { makeRemindTool } from './remind.js';
+import { makeListRemindersTool, makeCancelReminderTool } from './reminders.js';
 import { makeRememberTool, makeRecallTool } from './memory.js';
 import type { Embedder } from '../embeddings.js';
 import { makeTrackTool } from './track.js';
@@ -33,6 +34,8 @@ export async function buildToolsFor(opts: {
   const { db, userId } = opts;
   const builtIn: ToolSet = {
     remind: makeRemindTool(db, userId),
+    list_reminders: makeListRemindersTool(db, userId),
+    cancel_reminder: makeCancelReminderTool(db, userId),
     remember: makeRememberTool(db, userId, opts.embed),
     recall: makeRecallTool(db, userId, opts.embed),
     track: makeTrackTool(db, userId),
