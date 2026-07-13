@@ -40,4 +40,16 @@ export function migrate(db: DB): void {
   if (!memCols.has('space_id')) {
     db.exec('ALTER TABLE memory ADD COLUMN space_id INTEGER REFERENCES spaces(id)');
   }
+  const jobCols = new Set(
+    (db.prepare('PRAGMA table_info(jobs)').all() as { name: string }[]).map((c) => c.name),
+  );
+  if (!jobCols.has('recurrence')) {
+    db.exec('ALTER TABLE jobs ADD COLUMN recurrence TEXT');
+  }
+  if (!jobCols.has('recurrence_until')) {
+    db.exec('ALTER TABLE jobs ADD COLUMN recurrence_until INTEGER');
+  }
+  if (!jobCols.has('recurrence_count')) {
+    db.exec('ALTER TABLE jobs ADD COLUMN recurrence_count INTEGER');
+  }
 }

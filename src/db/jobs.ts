@@ -9,6 +9,9 @@ export interface Job {
   fire_at: number;
   payload: Record<string, unknown>;
   status: 'pending' | 'done' | 'cancelled';
+  recurrence: string | null;
+  recurrence_until: number | null;
+  recurrence_count: number | null;
 }
 
 interface Row {
@@ -18,19 +21,35 @@ interface Row {
   fire_at: number;
   payload_json: string;
   status: Job['status'];
+  recurrence: string | null;
+  recurrence_until: number | null;
+  recurrence_count: number | null;
 }
 
 function hydrate(r: Row): Job {
-  return { id: r.id, user_id: r.user_id, type: r.type, fire_at: r.fire_at, payload: JSON.parse(r.payload_json), status: r.status };
+  return {
+    id: r.id, user_id: r.user_id, type: r.type, fire_at: r.fire_at,
+    payload: JSON.parse(r.payload_json), status: r.status,
+    recurrence: r.recurrence, recurrence_until: r.recurrence_until, recurrence_count: r.recurrence_count,
+  };
 }
 
 export function addJob(
   db: DB,
-  o: { userId: number; type: JobType; fireAt: number; payload: Record<string, unknown> },
+  o: {
+    userId: number; type: JobType; fireAt: number; payload: Record<string, unknown>;
+    recurrence?: string | null; recurrenceUntil?: number | null; recurrenceCount?: number | null;
+  },
 ): number {
   const info = db
-    .prepare('INSERT INTO jobs (user_id, type, fire_at, payload_json, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(o.userId, o.type, o.fireAt, JSON.stringify(o.payload), Date.now());
+    .prepare(
+      `INSERT INTO jobs (user_id, type, fire_at, payload_json, created_at, recurrence, recurrence_until, recurrence_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      o.userId, o.type, o.fireAt, JSON.stringify(o.payload), Date.now(),
+      o.recurrence ?? null, o.recurrenceUntil ?? null, o.recurrenceCount ?? null,
+    );
   return Number(info.lastInsertRowid);
 }
 
@@ -46,6 +65,16 @@ export function markDone(db: DB, id: number): void {
 
 export function cancelJob(db: DB, id: number): void {
   db.prepare("UPDATE jobs SET status='cancelled' WHERE id=?").run(id);
+}
+
+export function rearmJob(db: DB, id: number, fireAt: number, count: number | null): void {
+  db.prepare('UPDATE jobs SET fire_at=?, recurrence_count=? WHERE id=?').run(fireAt, count, id);
+}
+
+export function listRecurring(db: DB, userId: number): Job[] {
+  return (db
+    .prepare("SELECT * FROM jobs WHERE user_id=? AND status='pending' AND recurrence IS NOT NULL ORDER BY fire_at ASC")
+    .all(userId) as Row[]).map(hydrate);
 }
 
 export function pendingJobsByType(db: DB, userId: number, type: JobType): Job[] {
