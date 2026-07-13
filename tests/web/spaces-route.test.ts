@@ -7,6 +7,7 @@ import { startLogin, verifyByToken } from '../../src/db/sessions.js';
 import { buildWebApp } from '../../src/web/server.js';
 import { listSpacesForUser, isMember, createSpace } from '../../src/db/spaces.js';
 import { remember } from '../../src/db/memory.js';
+import { listActiveInvites } from '../../src/db/spaceInvites.js';
 
 function factExists(id: number): boolean {
   return !!db.prepare('SELECT 1 FROM memory WHERE id = ?').get(id);
@@ -61,32 +62,6 @@ describe('Spaces web page', () => {
     const res = await app.inject({ method: 'GET', url: '/spaces', headers: { cookie: sessionFor(a.id) } });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('Home');
-  });
-
-  it('POST /spaces/:id/members adds an allowlisted user as a member', async () => {
-    const a = createUserWithIdentity(db, { channel: 'telegram', externalId: 'a', heartbeat_interval_min: 30 });
-    setAllowlisted(db, a.id, true);
-    const dana = createUserWithIdentity(db, { channel: 'telegram', externalId: 'dana', heartbeat_interval_min: 30 });
-    setAllowlisted(db, dana.id, true);
-    db.prepare('UPDATE users SET name = ? WHERE id = ?').run('Dana', dana.id);
-
-    const createRes = await app.inject({
-      method: 'POST',
-      url: '/spaces',
-      headers: { cookie: sessionFor(a.id) },
-      payload: { name: 'Home' },
-    });
-    expect(createRes.statusCode).toBe(302);
-    const space = listSpacesForUser(db, a.id)[0]!;
-
-    const res = await app.inject({
-      method: 'POST',
-      url: `/spaces/${space.id}/members`,
-      headers: { cookie: sessionFor(a.id) },
-      payload: { member: 'Dana' },
-    });
-    expect(res.statusCode).toBe(302);
-    expect(isMember(db, space.id, dana.id)).toBe(true);
   });
 
   it('POST /spaces/:id/leave removes the caller as a member', async () => {
@@ -173,5 +148,64 @@ describe('Spaces web page', () => {
     const res = await app.inject({ method: 'GET', url: '/spaces', headers: { cookie: sessionFor(a.id) } });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('ancient shared fact');
+  });
+});
+
+describe('space invite codes (web)', () => {
+  it('creating a space mints one active invite code shown on the page', async () => {
+    const a = createUserWithIdentity(db, { channel: 'telegram', externalId: 'a', heartbeat_interval_min: 30 });
+    setAllowlisted(db, a.id, true);
+    await app.inject({ method: 'POST', url: '/spaces', headers: { cookie: sessionFor(a.id) }, payload: { name: 'Home' } });
+    const space = listSpacesForUser(db, a.id)[0]!;
+    const codes = listActiveInvites(db, space.id);
+    expect(codes).toHaveLength(1);
+    const res = await app.inject({ method: 'GET', url: '/spaces', headers: { cookie: sessionFor(a.id) } });
+    expect(res.body).toContain(codes[0]!.code);
+  });
+
+  it('POST /spaces/:id/invite generates another code for a member', async () => {
+    const a = createUserWithIdentity(db, { channel: 'telegram', externalId: 'a', heartbeat_interval_min: 30 });
+    setAllowlisted(db, a.id, true);
+    await app.inject({ method: 'POST', url: '/spaces', headers: { cookie: sessionFor(a.id) }, payload: { name: 'Home' } });
+    const space = listSpacesForUser(db, a.id)[0]!;
+    const res = await app.inject({ method: 'POST', url: `/spaces/${space.id}/invite`, headers: { cookie: sessionFor(a.id) } });
+    expect(res.statusCode).toBe(302);
+    expect(listActiveInvites(db, space.id).length).toBe(2); // create-mint + this one
+  });
+
+  it('POST /spaces/redeem joins the invitee via a code', async () => {
+    const a = createUserWithIdentity(db, { channel: 'telegram', externalId: 'a', heartbeat_interval_min: 30 });
+    const dana = createUserWithIdentity(db, { channel: 'telegram', externalId: 'dana', heartbeat_interval_min: 30 });
+    setAllowlisted(db, a.id, true);
+    setAllowlisted(db, dana.id, true);
+    await app.inject({ method: 'POST', url: '/spaces', headers: { cookie: sessionFor(a.id) }, payload: { name: 'Home' } });
+    const space = listSpacesForUser(db, a.id)[0]!;
+    const code = listActiveInvites(db, space.id)[0]!.code;
+    const res = await app.inject({ method: 'POST', url: '/spaces/redeem', headers: { cookie: sessionFor(dana.id) }, payload: { code } });
+    expect(res.statusCode).toBe(302);
+    expect(isMember(db, space.id, dana.id)).toBe(true);
+  });
+
+  it('a non-member cannot generate a code for a space', async () => {
+    const a = createUserWithIdentity(db, { channel: 'telegram', externalId: 'a', heartbeat_interval_min: 30 });
+    const b = createUserWithIdentity(db, { channel: 'telegram', externalId: 'b', heartbeat_interval_min: 30 });
+    setAllowlisted(db, a.id, true);
+    setAllowlisted(db, b.id, true);
+    await app.inject({ method: 'POST', url: '/spaces', headers: { cookie: sessionFor(a.id) }, payload: { name: 'Home' } });
+    const space = listSpacesForUser(db, a.id)[0]!;
+    const before = listActiveInvites(db, space.id).length;
+    await app.inject({ method: 'POST', url: `/spaces/${space.id}/invite`, headers: { cookie: sessionFor(b.id) } });
+    expect(listActiveInvites(db, space.id).length).toBe(before); // no code minted for the non-member
+  });
+
+  it('does not leak other users names on the spaces page (no enumeration)', async () => {
+    const a = createUserWithIdentity(db, { channel: 'telegram', externalId: 'a', heartbeat_interval_min: 30 });
+    const secret = createUserWithIdentity(db, { channel: 'telegram', externalId: 'secret', heartbeat_interval_min: 30 });
+    setAllowlisted(db, a.id, true);
+    setAllowlisted(db, secret.id, true);
+    db.prepare('UPDATE users SET name = ? WHERE id = ?').run('Zehava-Not-In-Space', secret.id);
+    await app.inject({ method: 'POST', url: '/spaces', headers: { cookie: sessionFor(a.id) }, payload: { name: 'Home' } });
+    const res = await app.inject({ method: 'GET', url: '/spaces', headers: { cookie: sessionFor(a.id) } });
+    expect(res.body).not.toContain('Zehava-Not-In-Space'); // a non-member's name must never appear
   });
 });

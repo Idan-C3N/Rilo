@@ -2,10 +2,11 @@ import type { FastifyInstance } from 'fastify';
 import type { DB } from '../../db/db.js';
 import {
   listSpacesForUser, listMembers, createSpace,
-  addMember, removeMember, isMember,
+  removeMember, isMember,
 } from '../../db/spaces.js';
+import { createInvite, listActiveInvites, redeemInvite } from '../../db/spaceInvites.js';
 import { listSpaceFacts, forgetInSpace } from '../../db/memory.js';
-import { listAllowlisted, getUserById } from '../../db/users.js';
+import { getUserById } from '../../db/users.js';
 import { layout, esc } from '../render.js';
 
 export function registerSpacesRoutes(app: FastifyInstance, db: DB): void {
@@ -14,11 +15,9 @@ export function registerSpacesRoutes(app: FastifyInstance, db: DB): void {
   app.get('/spaces', async (req, reply) => {
     const uid = uidOf(req);
     const spaces = listSpacesForUser(db, uid);
-    const allowlisted = listAllowlisted(db);
     const cards = spaces
       .map((s) => {
         const members = listMembers(db, s.id).map((u) => esc(u.name ?? `user ${u.id}`)).join(', ');
-        // shared facts in this space (unbounded — recall's LIMIT would drop older rows)
         const facts = listSpaceFacts(db, s.id);
         const factRows = facts.length
           ? facts
@@ -30,16 +29,18 @@ export function registerSpacesRoutes(app: FastifyInstance, db: DB): void {
               })
               .join('')
           : '<li class="muted">No shared facts yet.</li>';
-        const options = allowlisted
-          .map((u) => `<option value="${esc(u.name ?? String(u.id))}">`)
-          .join('');
+        const codes = listActiveInvites(db, s.id);
+        const codeRows = codes.length
+          ? codes.map((c) => `<li><code>${esc(c.code)}</code> <span class="muted">— expires ${new Date(c.expires_at).toISOString().slice(0, 10)}</span></li>`).join('')
+          : '<li class="muted">No active invite codes.</li>';
         return `<section class="card"><h3>${esc(s.name)}</h3>
           <p class="muted">Members: ${members}</p>
           <ul>${factRows}</ul>
-          <form method="post" action="/spaces/${s.id}/members" style="display:inline">
-            <input name="member" list="allowlisted-${s.id}" placeholder="Add person by name" required>
-            <datalist id="allowlisted-${s.id}">${options}</datalist>
-            <button type="submit">Add member</button></form>
+          <h4>Invite codes</h4>
+          <p class="muted">Send a code to someone (already approved on this bot) — they redeem it to join. Single-use, expires in 7 days.</p>
+          <ul>${codeRows}</ul>
+          <form method="post" action="/spaces/${s.id}/invite" style="display:inline">
+            <button type="submit">Generate another</button></form>
           <form method="post" action="/spaces/${s.id}/leave" style="display:inline">
             <button type="submit" class="secondary">Leave</button></form>
         </section>`;
@@ -49,23 +50,32 @@ export function registerSpacesRoutes(app: FastifyInstance, db: DB): void {
       <form method="post" action="/spaces">
         <input name="name" placeholder="e.g. Home" required>
         <button type="submit">Create</button></form></section>`;
-    reply.type('text/html').send(layout('Spaces', `${createForm}${cards}`, { active: 'spaces' }));
+    const redeemForm = `<section class="card"><h2>Join a space</h2>
+      <form method="post" action="/spaces/redeem">
+        <input name="code" placeholder="Invite code" required>
+        <button type="submit">Redeem</button></form></section>`;
+    reply.type('text/html').send(layout('Spaces', `${createForm}${redeemForm}${cards}`, { active: 'spaces' }));
   });
 
   app.post<{ Body: { name?: string } }>('/spaces', async (req, reply) => {
     const name = (req.body?.name ?? '').trim();
-    if (name) createSpace(db, { name, createdBy: uidOf(req) });
+    if (name) {
+      const space = createSpace(db, { name, createdBy: uidOf(req) });
+      createInvite(db, { spaceId: space.id, createdBy: uidOf(req) }); // auto-mint first code
+    }
     reply.redirect('/spaces');
   });
 
-  app.post<{ Params: { id: string }; Body: { member?: string } }>('/spaces/:id/members', async (req, reply) => {
+  app.post<{ Params: { id: string } }>('/spaces/:id/invite', async (req, reply) => {
     const uid = uidOf(req);
     const spaceId = Number(req.params.id);
-    if (isMember(db, spaceId, uid)) {
-      const name = (req.body?.member ?? '').trim().toLowerCase();
-      const target = listAllowlisted(db).find((u) => (u.name ?? '').toLowerCase() === name);
-      if (target) addMember(db, spaceId, target.id);
-    }
+    if (isMember(db, spaceId, uid)) createInvite(db, { spaceId, createdBy: uid });
+    reply.redirect('/spaces');
+  });
+
+  app.post<{ Body: { code?: string } }>('/spaces/redeem', async (req, reply) => {
+    const code = (req.body?.code ?? '').trim().toUpperCase();
+    if (code) redeemInvite(db, code, uidOf(req));
     reply.redirect('/spaces');
   });
 
