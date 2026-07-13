@@ -2,22 +2,25 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import type { DB } from '../../db/db.js';
 import {
-  createSpace, addMember, removeMember, isMember,
+  createSpace, removeMember, isMember,
   listSpacesForUser, listMembers, getSpaceByName,
 } from '../../db/spaces.js';
-import { listAllowlisted } from '../../db/users.js';
+import { createInvite, redeemInvite } from '../../db/spaceInvites.js';
 
 export function makeSpacesTool(db: DB, userId: number) {
   return tool({
     description:
-      'Manage shared memory spaces. Actions: create a space, add an allowlisted person by name, ' +
-      'list your spaces and their members, or leave a space. Facts shared to a space are visible to all its members.',
+      'Manage shared memory spaces. Actions: create a space (returns an invite code to share), ' +
+      'invite (generate a new single-use code for a space you belong to), redeem (join a space with a ' +
+      'code someone sent you), list your spaces and members, or leave a space. Facts shared to a space ' +
+      'are visible to all its members. To add someone, generate a code and send it to them — they redeem ' +
+      'it; you never pick people from a list.',
     inputSchema: z.object({
-      action: z.enum(['create', 'add_member', 'list', 'leave']),
-      name: z.string().optional().describe('Space name (required for create/add_member/leave)'),
-      member: z.string().optional().describe('Name of the allowlisted person to add (add_member)'),
+      action: z.enum(['create', 'invite', 'redeem', 'list', 'leave']),
+      name: z.string().optional().describe('Space name (required for create/invite/leave)'),
+      code: z.string().optional().describe('Invite code (required for redeem)'),
     }),
-    execute: async ({ action, name, member }) => {
+    execute: async ({ action, name, code }) => {
       if (action === 'list') {
         const spaces = listSpacesForUser(db, userId).map((s) => ({
           name: s.name,
@@ -25,11 +28,18 @@ export function makeSpacesTool(db: DB, userId: number) {
         }));
         return { ok: true, spaces };
       }
+
+      if (action === 'redeem') {
+        if (!code) return { ok: false, error: 'An invite code is required.' };
+        return redeemInvite(db, code, userId);
+      }
+
       if (!name) return { ok: false, error: 'A space name is required.' };
 
       if (action === 'create') {
-        createSpace(db, { name, createdBy: userId });
-        return { ok: true };
+        const space = createSpace(db, { name, createdBy: userId });
+        const { code: inviteCode } = createInvite(db, { spaceId: space.id, createdBy: userId });
+        return { ok: true, code: inviteCode };
       }
 
       const space = getSpaceByName(db, userId, name);
@@ -40,15 +50,10 @@ export function makeSpacesTool(db: DB, userId: number) {
         return { ok: true };
       }
 
-      // add_member
-      if (!member) return { ok: false, error: 'Which person should I add?' };
-      const target = listAllowlisted(db).find(
-        (u) => (u.name ?? '').toLowerCase() === member.toLowerCase(),
-      );
-      if (!target) return { ok: false, error: `No allowlisted person named "${member}".` };
+      // invite
       if (!isMember(db, space.id, userId)) return { ok: false, error: 'You are not a member of that space.' };
-      addMember(db, space.id, target.id);
-      return { ok: true };
+      const { code: inviteCode } = createInvite(db, { spaceId: space.id, createdBy: userId });
+      return { ok: true, code: inviteCode };
     },
   });
 }
