@@ -1,6 +1,6 @@
 # Rilo Open-Source Backlog
 
-**Updated:** 2026-07-12
+**Updated:** 2026-07-13
 **Purpose:** Coordination doc for the remaining open-source workstreams — approach
 sketch, files touched, open decisions, and how to parallelize across agents.
 
@@ -239,6 +239,94 @@ vs instructs; (c) where it lives (repo `skills/` vs the agent's global skills);
 
 ---
 
+## #14 — Recurring reminders  ·  effort: M  ·  needs brainstorm
+
+**Goal:** Let a user set a **repeating** reminder ("remind me every Monday 09:00",
+"every day at 15:30", "every 2 hours") — not just a one-shot.
+
+**Current (verified 2026-07-13):** does not exist.
+- `remind` tool is **one-shot only** — input `delay_minutes`, fires once
+  (`agent/tools/remind.ts:6-20`). `track` is likewise one-shot `followup`
+  (`track.ts:11-23`).
+- Scheduler polls every 15s, fires, then `markDone` — **no re-arm** for
+  reminders/followups (`scheduler/scheduler.ts:19-33`, `db/jobs.ts:43-45`).
+- `jobs` table has **no recurrence/cron/next_run** column — only `user_id`, `fire_at`,
+  `status` (`db/schema.sql:48-57`). Job types are `reminder|followup|heartbeat`.
+- The **only** recurring construct is the heartbeat, which re-arms itself each fire
+  (`scheduler/heartbeat.ts:49-54`) at a fixed per-user interval with model-chosen
+  content — a proactive check-in, **not** a user-defined recurring reminder. Do not
+  conflate the two, but **reuse its self-reschedule pattern**.
+
+**Approach sketch (resolve in brainstorm):**
+- Add a recurrence descriptor to `jobs` (options: (i) simple `interval_min` for
+  "every N min", (ii) a cron string, (iii) RRULE). Recommend starting with **cron**
+  (covers "every Monday 09:00" + "every day 15:30" + "every N hours" in one field);
+  add a `recurrence` (nullable) column, keep NULL = one-shot (backward compatible).
+- On fire, if recurrent, compute the next `fire_at` and re-insert/re-arm instead of
+  terminal `markDone` (mirror `heartbeat.ts:49-54`).
+- `remind` tool gains an optional recurrence arg; agent parses natural language
+  ("every Monday") → cron. Add a `list_reminders` / `cancel_reminder` tool — recurring
+  reminders need management (one-shots didn't).
+
+**Open decisions (brainstorm):**
+1. **Recurrence model:** interval-only (simple) vs cron (flexible) vs RRULE (full).
+   Recommend cron.
+2. **Timezone for cron** — reuse existing `users.tz` (`schema.sql:4`, default `'UTC'`,
+   already used by `quiet.ts`); confirm DST handling in the cron lib.
+3. **Management surface:** list/cancel/edit tools + a web UI list of active reminders
+   (none today).
+4. **Missed fires** (box down over a fire time): skip vs catch-up.
+
+**Files (rough):** `db/schema.sql` (+`recurrence` on `jobs`, migration — existing rows
+NULL/one-shot), `db/jobs.ts` (recurrence-aware add/query/re-arm),
+`scheduler/scheduler.ts` + `scheduler/fire.ts` (re-arm on fire), `agent/tools/remind.ts`
+(recurrence arg), maybe new `agent/tools/reminders.ts` (list/cancel), `web/` (manage
+reminders). **Tests:** recurrence re-arms and fires N times; one-shot unchanged;
+cron→next_run math; migration leaves old rows one-shot.
+
+**Conflicts:** `db/jobs.ts` + `scheduler/*` (isolated from the auth cluster — low
+contention). **Prereq for #15** (shared-space reminders build on this schema work).
+
+---
+
+## #15 — Shared-space reminders  ·  effort: M  ·  needs brainstorm  ·  after #14
+
+**Goal:** Let a reminder be **shared** to a space so all members get it (household:
+"trash out Tuesday night", "pick up kids 15:30") without each person setting their own.
+
+**Current (verified 2026-07-13):** does not exist.
+- `jobs` carry only `user_id`, **no `space_id`** (`db/schema.sql:48-57`, `db/jobs.ts:5-35`).
+- Delivery is keyed strictly on `job.user_id` (`scheduler/fire.ts:13-29`) — no fan-out.
+- Space scoping exists today **only** for `memory` (`schema.sql:66`, `db/memory.ts:14-26`),
+  via `spaces`/`space_members` (`db/spaces.ts`, merged with #12). The `remember` tool
+  already exposes an optional `space` name (`agent/tools/memory.ts:19-27`) — mirror it.
+
+**Approach sketch (resolve in brainstorm):**
+- Add `space_id` (nullable) to `jobs`, mirroring `memory.space_id`.
+- At fire time, if `space_id` set, **fan out**: resolve `space_members`
+  (`db/spaces.ts listMembers`) → deliver to each member's channel identity
+  (generalize `fire.ts` beyond single `job.user_id`), respecting each member's quiet
+  hours (`scheduler/quiet.ts`).
+- `remind` tool gains an optional `space` name (mirror `remember`); membership-gated.
+
+**Open decisions (brainstorm):**
+1. **Fan-out semantics:** one job fanned to N members vs N per-member jobs; dedupe.
+2. **Authorization:** who can create/cancel a space reminder — any member vs owner.
+3. **Quiet hours** per member on shared delivery.
+4. Interaction with #3 security (a shared reminder is an amplification/authorization
+   surface — one member schedules messages to others).
+
+**Files (rough):** `db/schema.sql` (+`space_id` on `jobs`, migration), `db/jobs.ts`
+(space-aware add/query), `scheduler/fire.ts` (fan-out to members), `agent/tools/remind.ts`
+(+`space` arg, membership gate), `web/` (show space reminders). **Tests:** space
+reminder fans out to all members; non-members excluded; quiet-hours honored per member;
+personal reminders unaffected.
+
+**Conflicts:** `db/jobs.ts` + `scheduler/fire.ts` (shared with #14 — **serialize after
+#14**). Builds on #12's spaces model (merged).
+
+---
+
 ## Suggested sequencing (updated)
 
 1. ~~#8 ∥ #1~~ — **both merged**. Public repo pushed.
@@ -248,4 +336,6 @@ vs instructs; (c) where it lives (repo `skills/` vs the agent's global skills);
 5. **#12 shared/household memory** — after security; touches `dispatch.ts` + `db/memory.ts` (now also the embedding columns).
 6. **#5 README** rewrite (reflect SearXNG default, single-Compose + Caddy deploy, web-OAuth, embeddings).
 7. **#13 deploy skill** — capture the now-proven deploy runbook as a guided skill.
-8. **Small follow-ups** — pin image tags; recall threshold 0.80→~0.72.
+8. **#14 recurring reminders** — new; ideally after #3 security. Prereq for #15.
+9. **#15 shared-space reminders** — new; **after #14** (same `jobs`/`fire.ts` surface) + builds on #12 (merged).
+10. **Small follow-ups** — pin image tags; recall threshold 0.80→~0.72.
