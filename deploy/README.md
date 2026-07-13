@@ -105,8 +105,7 @@ docker compose -f compose.yml -f compose.caddy.yml up -d --build
 ```
 
 Use the same two `-f` files on every redeploy, or the app re-publishes 8080 and
-Caddy stops. The overlay reads `DOMAIN` (and optional `ACME_EMAIL`) from `.env` —
-no file edits needed.
+Caddy stops. The overlay reads `DOMAIN` from `.env` — no file edits needed.
 
 ---
 

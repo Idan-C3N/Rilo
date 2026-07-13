@@ -14,7 +14,6 @@ services:
       - "443:443"
     environment:
       - DOMAIN=${DOMAIN}
-      - ACME_EMAIL=${ACME_EMAIL}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data       # persisted certs — survives redeploys, avoids ACME rate limits

@@ -91,10 +91,10 @@ ssh <box> 'cd /opt/personal-agent && docker compose up -d --build'
 
 **Verify:**
 ```bash
-ssh <box> 'cd /opt/personal-agent && docker compose ps && curl -fsS http://localhost:8080/health'
+ssh <box> 'cd /opt/personal-agent && docker compose ps && curl -fsS http://localhost:8080/login'
 ```
-Expected: containers `running`/healthy and `/health` returns OK. If the app can't
-write the DB, see the uid-1001 gotcha below.
+Expected: containers show `running` (healthy) and `/login` returns 200 (a public
+route). If the app can't write the DB, see the uid-1001 gotcha below.
 
 ## Phase 5 — Onboard the owner
 
@@ -107,8 +107,8 @@ write the DB, see the uid-1001 gotcha below.
 
 **SQL fallback** (only if auto-owner didn't apply):
 ```bash
-ssh <box> "cd /opt/personal-agent && docker compose exec app sqlite3 /app/data/agent.db \
-  \"UPDATE users SET allowlisted = 1 WHERE id = (SELECT user_id FROM identities WHERE channel = 'telegram' ORDER BY id DESC LIMIT 1);\""
+# SSH into the box first, then from /opt/personal-agent:
+docker compose exec -T app node -e 'const db=require("better-sqlite3")("/app/data/agent.db"); db.prepare("UPDATE users SET allowlisted = 1 WHERE id = (SELECT user_id FROM identities WHERE channel = '"'"'telegram'"'"' ORDER BY id DESC LIMIT 1)").run(); console.log("allowlisted")'
 ```
 
 **Verify:** the user confirms the bot responds to a normal message and the web UI
@@ -128,7 +128,6 @@ public domain, TLS via Caddy, and the one-click Google OAuth button.
    WEB_BASE_URL=https://<domain>
    ENABLE_WEB_OAUTH=true
    DOMAIN=<domain>
-   ACME_EMAIL=<email>   # optional; blank = anonymous ACME registration
    ```
 4. **Google OAuth client:** in Google Cloud Console, create an OAuth client of type
    **Web application** with redirect URI `https://<domain>/oauth/google/callback`;
@@ -141,7 +140,7 @@ public domain, TLS via Caddy, and the one-click Google OAuth button.
 
 **Verify:**
 ```bash
-curl -fsSI https://<domain>/health
+curl -fsSI https://<domain>/login
 ```
 Expected: a valid TLS cert (no warning) and a 200. Confirm the "Connect with Google"
 button appears on the Services screen.
