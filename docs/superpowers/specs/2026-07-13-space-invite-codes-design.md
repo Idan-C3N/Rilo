@@ -38,6 +38,11 @@ tool's `add_member` action).
 4. **Both surfaces:** generate + redeem from the bot AND the web UI.
 5. **Short, human-friendly code:** ~6 chars, uppercase, unambiguous alphabet — it
    is typed by a human in chat, unlike the long login/registration token.
+6. **Auto-generate one code on space creation** (for discoverability — a user who
+   didn't get a code at creation has no cue that inviting means "generate a
+   code"). Members can generate additional codes anytime. Both surfaces keep the
+   invite affordance visible: the bot presents the code + offers more on create;
+   the web space card always shows active codes + a "Generate another" button.
 
 ## Current State (verified against HEAD)
 
@@ -98,6 +103,11 @@ invite** is `redeemed_at IS NULL AND expires_at > now`.
   re-check validity, `addMember(db, spaceId, userId)`, set
   `redeemed_by = userId, redeemed_at = now`. Idempotent-safe: a second redeem of
   the same code fails (already redeemed).
+- `listActiveInvites(db, spaceId): SpaceInvite[]` — `redeemed_at IS NULL AND
+  expires_at > now`, for the web card display.
+
+Space creation auto-mints the first code: the `create` bot action and the
+`POST /spaces` web route call `createInvite` right after `createSpace`.
 
 ### 3. Bot tool — replace `add_member` in `src/agent/tools/spaces.ts`
 
@@ -109,16 +119,20 @@ two small tools — implementation detail for the plan):
 - `redeem` — `{ code }` → caller must be allowlisted (they are, to be chatting);
   redeem → join. Returns the space joined or an error (invalid/expired/used).
 
-Keep `create`, `list`, `leave` unchanged. The tool no longer references
+Keep `list`, `leave` unchanged. `create` now **also mints an invite code** (calls
+`createInvite`) and returns it alongside the new space, so the agent presents it
+immediately (persona: confirm + offer next step). The tool no longer references
 `listAllowlisted`, so the bot can no longer add or reveal users by name.
 
 ### 4. Web — `src/web/routes/spaces.ts`
 
 - **Remove** the add-member `<datalist>` + its `listAllowlisted` enumeration and
   the by-name POST `/spaces/:id/members` handler.
-- **Add** per space card (members only): a "Generate invite" button →
-  `POST /spaces/:id/invite` → creates a code, re-renders the card showing the code
-  to copy (plus its expiry).
+- **Add** per space card (members only): the card lists any **active** invite
+  codes for that space (unredeemed + unexpired) with their expiry, plus a
+  "Generate another" button → `POST /spaces/:id/invite` → creates a code and
+  re-renders the card. Creating a space (`POST /spaces`) also mints the first code
+  so a fresh card is never empty of an invite affordance.
 - **Add** a "Redeem invite code" input (page-level) → `POST /spaces/redeem` with
   the code → joins → redirect. Follows the existing form-POST + redirect pattern
   (not htmx), matching the rest of `spaces.ts`.
@@ -147,13 +161,15 @@ surface to already-trusted insiders).
 
 - **`spaceInvites` db:** create returns a valid code; `getValidInvite` honors
   expiry + redeemed; `redeemInvite` adds the member and marks the row; a second
-  redeem fails; an expired code fails.
-- **bot tool:** `invite` refused for a non-member; `redeem` joins on a valid code
-  and rejects invalid/expired/used; `create`/`list`/`leave` unchanged; the tool no
-  longer exposes `add_member`.
-- **web:** generate button returns a code for a member; redeem joins; a non-member
-  cannot generate; **a regression test asserting `/spaces` output contains no
-  other user's name** (the leak is closed).
+  redeem fails; an expired code fails; `listActiveInvites` excludes redeemed +
+  expired.
+- **bot tool:** `create` returns a space **and** a code; `invite` refused for a
+  non-member; `redeem` joins on a valid code and rejects invalid/expired/used;
+  `list`/`leave` unchanged; the tool no longer exposes `add_member`.
+- **web:** creating a space yields a card showing one active code; "Generate
+  another" adds a code for a member; redeem joins; a non-member cannot generate;
+  **a regression test asserting `/spaces` output contains no other user's name**
+  (the leak is closed).
 
 ## Files
 
