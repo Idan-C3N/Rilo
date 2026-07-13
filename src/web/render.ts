@@ -1,6 +1,6 @@
 import { CSS } from './styles.js';
 
-export type NavKey = 'home' | 'models' | 'services' | 'spaces';
+export type NavKey = 'home' | 'models' | 'services' | 'spaces' | 'reminders';
 export interface Flash {
   kind: 'ok' | 'error';
   msg: string;
@@ -11,6 +11,7 @@ const NAV: Array<{ key: NavKey; href: string; label: string }> = [
   { key: 'models', href: '/models', label: 'Models' },
   { key: 'services', href: '/mcp', label: 'Services' },
   { key: 'spaces', href: '/spaces', label: 'Spaces' },
+  { key: 'reminders', href: '/reminders', label: 'Reminders' },
 ];
 
 export function esc(s: string): string {
