@@ -37,4 +37,7 @@ export function migrate(db: DB): void {
   if (!memCols.has('embedding')) {
     db.exec('ALTER TABLE memory ADD COLUMN embedding BLOB');
   }
+  if (!memCols.has('space_id')) {
+    db.exec('ALTER TABLE memory ADD COLUMN space_id INTEGER REFERENCES spaces(id)');
+  }
 }

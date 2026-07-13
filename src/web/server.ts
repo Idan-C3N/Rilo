@@ -13,6 +13,7 @@ import { registerMcpRoutes } from './routes/mcp.js';
 import { registerOauthRoutes, type MakeOauthClient } from './routes/oauth.js';
 import { registerRegisterRoutes } from './routes/register.js';
 import { registerPendingRoutes } from './routes/pending.js';
+import { registerSpacesRoutes } from './routes/spaces.js';
 import { layout, flash } from './render.js';
 import { getModelIds } from '../openrouter/catalog.js';
 
@@ -124,6 +125,7 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
     registrationLink: deps.registrationLink ?? ((code) => `/register?code=${code}`),
   });
   registerPendingRoutes(app, deps.db, { notify: deps.notify });
+  registerSpacesRoutes(app, deps.db);
   return app;
 }
 

@@ -6,28 +6,50 @@ export interface MemoryItem {
   mkey: string | null;
   text: string;
   created_at: number;
+  space_id: number | null;
 }
 
-export function remember(db: DB, userId: number, text: string, mkey?: string): number {
+// A row is visible to userId if it is their own personal row (space_id NULL)
+// or belongs to a space they are a member of.
+const VISIBLE = `(
+  (memory.space_id IS NULL AND memory.user_id = @uid)
+  OR memory.space_id IN (SELECT space_id FROM space_members WHERE user_id = @uid)
+)`;
+
+export function remember(
+  db: DB, userId: number, text: string, mkey?: string, spaceId?: number,
+): number {
   const info = db
-    .prepare('INSERT INTO memory (user_id, mkey, text, created_at) VALUES (?, ?, ?, ?)')
-    .run(userId, mkey ?? null, text, Date.now());
+    .prepare('INSERT INTO memory (user_id, mkey, text, created_at, space_id) VALUES (?, ?, ?, ?, ?)')
+    .run(userId, mkey ?? null, text, Date.now(), spaceId ?? null);
   return Number(info.lastInsertRowid);
 }
 
 export function recall(db: DB, userId: number, query?: string): MemoryItem[] {
   if (query) {
     return db
-      .prepare('SELECT * FROM memory WHERE user_id = ? AND text LIKE ? ORDER BY id DESC LIMIT 50')
-      .all(userId, `%${query}%`) as MemoryItem[];
+      .prepare(`SELECT * FROM memory WHERE ${VISIBLE} AND text LIKE @q ORDER BY id DESC LIMIT 50`)
+      .all({ uid: userId, q: `%${query}%` }) as MemoryItem[];
   }
   return db
-    .prepare('SELECT * FROM memory WHERE user_id = ? ORDER BY id DESC LIMIT 50')
-    .all(userId) as MemoryItem[];
+    .prepare(`SELECT * FROM memory WHERE ${VISIBLE} ORDER BY id DESC LIMIT 50`)
+    .all({ uid: userId }) as MemoryItem[];
 }
 
+// INTERNAL/TEST-ONLY: unscoped delete by id. Do NOT call from a request handler —
+// use forgetInSpace (scoped) for user-facing deletes.
 export function forget(db: DB, id: number): void {
   db.prepare('DELETE FROM memory WHERE id = ?').run(id);
+}
+
+/** Delete a fact only if it belongs to the given space (scoped, tenant-safe). */
+export function forgetInSpace(db: DB, id: number, spaceId: number): void {
+  db.prepare('DELETE FROM memory WHERE id = ? AND space_id = ?').run(id, spaceId);
+}
+
+/** All facts shared to a space, newest first — unbounded (no recall LIMIT). */
+export function listSpaceFacts(db: DB, spaceId: number): MemoryItem[] {
+  return db.prepare('SELECT * FROM memory WHERE space_id = ? ORDER BY id DESC').all(spaceId) as MemoryItem[];
 }
 
 export function vecToBlob(v: Float32Array): Buffer {
@@ -58,8 +80,8 @@ export function recallVector(
   db: DB, userId: number, queryVec: Float32Array, k = 8, threshold = 0.8,
 ): MemoryItem[] {
   const rows = db
-    .prepare('SELECT * FROM memory WHERE user_id = ? AND embedding IS NOT NULL')
-    .all(userId) as (MemoryItem & { embedding: Buffer })[];
+    .prepare(`SELECT * FROM memory WHERE ${VISIBLE} AND embedding IS NOT NULL`)
+    .all({ uid: userId }) as (MemoryItem & { embedding: Buffer })[];
   return rows
     .map((r) => {
       const v = blobToVec(r.embedding);

@@ -62,9 +62,11 @@ CREATE TABLE IF NOT EXISTS memory (
   mkey TEXT,
   text TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  embedding BLOB
+  embedding BLOB,
+  space_id INTEGER REFERENCES spaces(id)
 );
 CREATE INDEX IF NOT EXISTS idx_memory_user ON memory(user_id);
+CREATE INDEX IF NOT EXISTS idx_memory_space ON memory(space_id);
 
 CREATE TABLE IF NOT EXISTS mcp_servers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,3 +119,18 @@ CREATE TABLE IF NOT EXISTS pending_registrations (
 CREATE INDEX IF NOT EXISTS idx_pending_reg_code ON pending_registrations(code);
 CREATE INDEX IF NOT EXISTS idx_pending_reg_contact
   ON pending_registrations(channel, channel_user_id);
+
+CREATE TABLE IF NOT EXISTS spaces (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS space_members (
+  space_id INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at INTEGER NOT NULL,
+  PRIMARY KEY (space_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_space_members_user ON space_members(user_id);
