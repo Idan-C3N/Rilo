@@ -109,6 +109,7 @@ flow (loopback helper preferred, to stay firewall-only). Slack is token-based
 
 ## Deploy
 
-`deploy/hetzner/` has Hetzner auto-provision (`provision.sh`), `deploy.sh`,
-`cloud-init.yaml`, and the systemd unit. UI is firewalled to the owner IP; Telegram
-uses outbound long-poll (no public inbound needed). See `README.md` for the run order.
+`deploy/provision.sh` bootstraps any Ubuntu/Debian VPS (Docker + compose + git,
+clones to `/opt/personal-agent`); the stack runs via `compose.yml`. UI is firewalled
+to the owner IP; Telegram uses outbound long-poll (no public inbound needed). See
+`DEPLOY.md` for the agent-driven runbook and `deploy/README.md` for the reference.

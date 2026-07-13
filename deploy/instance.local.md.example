@@ -4,7 +4,7 @@
   Firewall locks SSH + UI to the owner IP only.
 - SSH key: `<SSH_KEY_NAME>` (path `~/.ssh/<SSH_KEY_NAME>`); add a
   `Host <SERVER_IP>` block in `~/.ssh/config` so `ssh root@<SERVER_IP>` just works.
-- Redeploy: `SERVER_IP=<SERVER_IP> ./deploy/hetzner/deploy.sh`
-- Logs: `ssh root@<SERVER_IP> journalctl -u personal-agent -f`
+- Redeploy: `ssh root@<SERVER_IP> 'cd /opt/personal-agent && git pull && docker compose up -d --build'`
+- Logs: `ssh root@<SERVER_IP> 'cd /opt/personal-agent && docker compose logs -f'`
 - Prod secrets (bot token, ENC_KEY) live only in the server's /opt/personal-agent/.env —
   never here, never committed.

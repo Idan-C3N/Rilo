@@ -10,8 +10,8 @@
 #   2) cp .env.example .env  &&  edit .env  (secrets — see the root README)
 #   3) docker compose up -d --build
 #
-# The Hetzner firewall (SSH + 8080 restricted to your IP) is managed in the
-# Hetzner console/API, not here — see deploy/README.md.
+# The host firewall (SSH + 8080 restricted to your IP) is managed at your VPS
+# provider (console/API), not here — see deploy/README.md.
 set -euo pipefail
 
 REPO_URL="${REPO_URL:?set REPO_URL to the git remote to clone}"
