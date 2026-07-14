@@ -1,6 +1,6 @@
 # Rilo Open-Source Backlog
 
-**Updated:** 2026-07-13
+**Updated:** 2026-07-14
 **Purpose:** Coordination doc for the remaining open-source workstreams — approach
 sketch, files touched, open decisions, and how to parallelize across agents.
 
@@ -26,6 +26,11 @@ sketch, files touched, open decisions, and how to parallelize across agents.
 - **Live-box migration systemd → Docker Compose** — done 2026-07-12 (DB + `.env` preserved; systemd unit disabled). The box now runs `docker compose -f compose.yml -f compose.caddy.yml`. `rilo-deployment` memory updated with the new redeploy command + gotchas.
 - **Semantic memory recall via embeddings** — bundled internal **TEI `multilingual-e5-small`** (384-d) container; vectors as `BLOB` in the `memory` table, brute-force cosine, best-effort embed-on-write + boot backfill + substring fallback. Merged + live; cross-lingual recall verified (English query → Hebrew memories). Spec/plan in `docs/superpowers/`.
 - **Structured logging (pino)** — full request-lifecycle logging keyed by a per-message `turnId` (`inbound` / `turn.start` / `llm.done` with tools + token usage / `reply` / errors); token+phone redaction; `LOG_LEVEL` env; apology-to-user on turn failure (was silent); `GenerateFn` widened to surface the SDK's `usage`+`steps`. Merged + live.
+- **#12 — Shared memory (household/group spaces)** — `spaces`/`space_members` + `memory.space_id`; `remember` gains an optional `space`; personal-vs-shared scope with a leak-free VISIBLE predicate; web space management. Merged (PR #5) + live. Spec/plan in `docs/superpowers/`.
+- **#13 — Deploy playbook** — `DEPLOY.md` agent-driven generic deploy playbook (host-agnostic; env-driven Caddy `{$DOMAIN}`; verify gates + gotchas). Merged. (Shipped as a doc playbook rather than a `SKILL.md`.)
+- **#14 — Recurring reminders** — cron recurrence on `jobs` (`recurrence`/`recurrence_until`/`recurrence_count`, NULL = one-shot); `scheduler/recurrence.ts` (`cron-parser`, tz-aware, DST); in-place re-arm with caps + skip-to-next; `remind` recurrence args; `list_reminders`/`cancel_reminder` tools; web Reminders page (list + cancel). Merged (PR #8) + live (deployed 2026-07-14). Spec/plan in `docs/superpowers/`. Fixed a #12 migration-ordering crash found on deploy (PR #9). Follow-ups below.
+- **Space invite codes (#12 follow-up)** — single-use, 7-day, 6-char invite codes replace the roster-enumerating add-member flow; `space_invites` table + `db/spaceInvites.ts`; bot `invite`/`redeem` (dropped `add_member`); web generate/redeem; auto-mint on create; `redeemInvite` allowlist-gated. Closes the web `/spaces` user-enumeration leak. Merged (PR #10) + live. Spec/plan in `docs/superpowers/`.
+- **Web nav rename** — "Reminders" → "Recurring reminders" (PR #11) + live.
 
 ## New follow-ups (from the deploy/OSS session)
 
@@ -34,6 +39,11 @@ sketch, files touched, open decisions, and how to parallelize across agents.
 - **README quickstart** — the public repo's root README still predates all this (folded into #5).
 - **Recall threshold tuning** — semantic recall defaults to cosine `threshold = 0.80`; live e5 scores are compressed, so borderline-relevant memories (~0.78) get dropped. Lower to ~**0.72** (and reconsider `k`). Small edit in `db/memory.ts` `recallVector`.
 - **`mkey` consistency (cosmetic)** — the agent labels memories inconsistently (English vs Hebrew keys). Harmless (recall is by vector), but a prompt tweak could standardize.
+- **Persona doesn't advertise spaces (and reminders line is pre-#14)** — `BASE_PERSONA` (`agent/core.ts:11-23`) lists memory/reminders/track/Google but **not shared spaces**, so the bot omits spaces when asked its capabilities; the reminders line still says "convert to minutes" (one-shot wording, pre-#14). Add a spaces line + update the reminders line so the bot advertises both. Small prompt edit.
+- **#14 follow-up — de-allowlist count-burn** (Minor correctness): a de-allowlisted user's recurring reminder still re-arms and **burns its count** (`scheduler/fire.ts` returns early without throwing, so `scheduler.ts reschedule` still decrements). Asymmetric with heartbeat, which stops the chain. Fix: `reschedule` skips/retires when the owner isn't allowlisted, OR `fireReminder` signals not-delivered. Needs a small brainstorm (touches `fire.ts`, shared with #3/#15).
+- **#14 follow-up — web cap shown in UTC** (cosmetic): the Reminders page renders `recurrence_until` via `toISOString()` (UTC) while the schedule is in the user's tz (`web/routes/reminders.ts`). Format in the user tz or label it UTC.
+- **#14 follow-up — `describeCron` raw string** — the management list shows the raw cron (`0 9 * * 1`) instead of an English label ("Mondays 09:00"). Optional friendliness (`scheduler/recurrence.ts`).
+- **Invite-code fast-follows** (from PR #10 review): (a) redeem/invite give **no failure flash** on a bad/expired/used code or non-member attempt (`web/routes/spaces.ts` discards the result + redirects) — wire a flash; (b) bot `redeem` returns the numeric `spaceId`, not the space **name** (`agent/tools/spaces.ts`); (c) `createInvite` UNIQUE-collision detection is `String(e).includes('UNIQUE')` — prefer `e.code === 'SQLITE_CONSTRAINT_UNIQUE'`; (d) **redeem rate-limiting** — deferred to #3 (accepted low risk: double-gated, single-use, small keyspace of active codes).
 
 ## File-contention map (why parallelism is limited)
 
@@ -178,7 +188,9 @@ workstream's final review passes (same subagent-driven flow used so far).
 
 ---
 
-## #12 — Shared memory between people (household/group)  ·  effort: L  ·  needs brainstorm
+## #12 — Shared memory between people (household/group)  ·  ✅ DONE (PR #5, live)
+
+**Shipped:** `spaces`/`space_members` + `memory.space_id`; scope-aware `remember`/`recall`; leak-free personal-vs-shared merge; web space management. Member-adding later hardened by **space invite codes** (see Done). Original sketch below for history.
 
 **Goal:** Let two or more allowlisted users share a common memory space so the agent has shared context across them — e.g. Idan + wife sharing household facts ("kids' school pickup is 15:30", "our anniversary is …", shopping list) without each having to re-teach the bot.
 
@@ -204,7 +216,9 @@ workstream's final review passes (same subagent-driven flow used so far).
 
 ---
 
-## #13 — Deploy skill: guide agents to deploy Rilo  ·  effort: S-M  ·  needs brainstorm
+## #13 — Deploy skill: guide agents to deploy Rilo  ·  ✅ DONE (`DEPLOY.md`, merged)
+
+**Shipped** as an agent-driven `DEPLOY.md` playbook (host-agnostic; env-driven Caddy `{$DOMAIN}`; verify gates + the live-hit gotchas), not a `SKILL.md`. Original sketch below for history.
 
 **Goal:** A reusable **skill** (superpowers-style `SKILL.md`) that walks an agent
 through deploying this personal assistant end-to-end, so a fresh agent (or a new
@@ -239,7 +253,9 @@ vs instructs; (c) where it lives (repo `skills/` vs the agent's global skills);
 
 ---
 
-## #14 — Recurring reminders  ·  effort: M  ·  needs brainstorm
+## #14 — Recurring reminders  ·  ✅ DONE (PR #8, live)
+
+**Shipped:** cron recurrence on `jobs` + `scheduler/recurrence.ts` (tz-aware, DST via `cron-parser`); in-place re-arm with until/count caps + skip-to-next; `remind` recurrence args; `list_reminders`/`cancel_reminder`; web Reminders page. Deployed 2026-07-14 (a #12 migration-ordering crash surfaced on deploy → fixed PR #9). Deferred follow-ups in "New follow-ups" below. Original sketch below for history.
 
 **Goal:** Let a user set a **repeating** reminder ("remind me every Monday 09:00",
 "every day at 15:30", "every 2 hours") — not just a one-shot.
@@ -289,7 +305,7 @@ contention). **Prereq for #15** (shared-space reminders build on this schema wor
 
 ---
 
-## #15 — Shared-space reminders  ·  effort: M  ·  needs brainstorm  ·  after #14
+## #15 — Shared-space reminders  ·  effort: M  ·  needs brainstorm  ·  UNBLOCKED (prereqs #14 + #12 shipped)
 
 **Goal:** Let a reminder be **shared** to a space so all members get it (household:
 "trash out Tuesday night", "pick up kids 15:30") without each person setting their own.
@@ -332,10 +348,11 @@ personal reminders unaffected.
 1. ~~#8 ∥ #1~~ — **both merged**. Public repo pushed.
 2. ~~#9 onboarding + #11 magic-link~~ — **both merged** (PR #3, PR #2).
 3. ~~Live-box migration + public HTTPS/web-OAuth + embeddings + logging~~ — **all merged + live** (2026-07-12).
-4. **#3 security pass** — pressing now that the repo is public **and internet-exposed** (Caddy on 80/443). Audit sessions/CSRF/rate-limit/deps/error-leak; fix; test. **Do next.**
-5. **#12 shared/household memory** — after security; touches `dispatch.ts` + `db/memory.ts` (now also the embedding columns).
-6. **#5 README** rewrite (reflect SearXNG default, single-Compose + Caddy deploy, web-OAuth, embeddings).
-7. **#13 deploy skill** — capture the now-proven deploy runbook as a guided skill.
-8. **#14 recurring reminders** — new; ideally after #3 security. Prereq for #15.
-9. **#15 shared-space reminders** — new; **after #14** (same `jobs`/`fire.ts` surface) + builds on #12 (merged).
-10. **Small follow-ups** — pin image tags; recall threshold 0.80→~0.72.
+4. ~~#12 shared/household memory~~ — **merged (PR #5) + live**; add-member hardened by invite codes (PR #10).
+5. ~~#13 deploy playbook~~ — **shipped** as `DEPLOY.md`.
+6. ~~#14 recurring reminders~~ — **merged (PR #8) + live** (2026-07-14); migration-fix PR #9.
+7. ~~Space invite codes (#12 follow-up)~~ — **merged (PR #10) + live**; closed the `/spaces` enumeration leak.
+8. **#3 security pass** — **do next.** Public + internet-exposed (Caddy 80/443). Audit sessions/CSRF/rate-limit/deps/error-leak; fix; test. Now also owns the deferred **redeem rate-limiting** + the **de-allowlist count-burn** interaction.
+9. **#15 shared-space reminders** — **now unblocked** (#14 + #12 both shipped). Same `jobs`/`fire.ts` surface as #14.
+10. **#5 README** rewrite (SearXNG default, single-Compose + Caddy deploy, web-OAuth, embeddings, spaces + recurring reminders).
+11. **Small follow-ups** — persona advertises spaces/recurring reminders; #14 follow-ups (UTC display, `describeCron` label); invite-code fast-follows (redeem flash, bot returns space name); pin image tags; recall threshold 0.80→~0.72.
