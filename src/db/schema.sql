@@ -140,3 +140,15 @@ CREATE TABLE IF NOT EXISTS space_members (
   PRIMARY KEY (space_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_space_members_user ON space_members(user_id);
+
+CREATE TABLE IF NOT EXISTS space_invites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  space_id INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  code TEXT NOT NULL UNIQUE,
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  redeemed_by INTEGER REFERENCES users(id),
+  redeemed_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_space_invites_code ON space_invites(code);
