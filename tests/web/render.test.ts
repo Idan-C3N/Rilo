@@ -13,7 +13,7 @@ describe('render helpers', () => {
     expect(html).toContain('href="/"');        // Home
     expect(html).toContain('href="/models"');  // Models
     expect(html).toContain('href="/mcp"');      // Services
-    expect(html).toContain('href="/logout"');   // Log out
+    expect(html).toContain('action="/logout"');   // Log out
     expect(html).toContain('<p>hi</p>');
   });
 

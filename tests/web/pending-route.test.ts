@@ -51,6 +51,7 @@ describe('owner-only Pending list', () => {
     seedPending('req1', 'Ann');
     const owner = createUserWithIdentity(db, { channel: 'telegram', externalId: 'owner', heartbeat_interval_min: 30 });
     setOwner(db, owner.id, true);
+    setAllowlisted(db, owner.id, true);
     const res = await app.inject({ method: 'GET', url: '/users/pending', headers: { cookie: sessionFor(owner.id) } });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('Ann');
@@ -70,6 +71,7 @@ describe('owner-only Pending list', () => {
     const targetId = seedPending('req1');
     const owner = createUserWithIdentity(db, { channel: 'telegram', externalId: 'owner', heartbeat_interval_min: 30 });
     setOwner(db, owner.id, true);
+    setAllowlisted(db, owner.id, true);
     const res = await app.inject({ method: 'POST', url: `/users/${targetId}/approve`, headers: { cookie: sessionFor(owner.id) } });
     expect(res.statusCode).toBe(302);
     expect(isAllowlisted(db, targetId)).toBe(true);
@@ -80,6 +82,7 @@ describe('owner-only Pending list', () => {
     const targetId = seedPending('req1');
     const owner = createUserWithIdentity(db, { channel: 'telegram', externalId: 'owner', heartbeat_interval_min: 30 });
     setOwner(db, owner.id, true);
+    setAllowlisted(db, owner.id, true);
     const res = await app.inject({ method: 'POST', url: `/users/${targetId}/deny`, headers: { cookie: sessionFor(owner.id) } });
     expect(res.statusCode).toBe(302);
     expect(isAllowlisted(db, targetId)).toBe(false);

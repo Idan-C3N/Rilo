@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUserWithIdentity } from '../../src/db/users.js';
+import { createUserWithIdentity, setAllowlisted } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { startLogin, verifyByToken } from '../../src/db/sessions.js';
 import { getConfig } from '../../src/db/config.js';
@@ -15,6 +15,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   db = openDb(':memory:');
   uid = createUserWithIdentity(db, { channel: 'telegram', externalId: 't', heartbeat_interval_min: 30 }).id;
+  setAllowlisted(db, uid, true);
   const { token } = startLogin(db, uid);
   cookie = `token=${verifyByToken(db, token)}`;
   app = await buildWebApp({ db, appCfg: {} as any, getModels: async () => ['anthropic/claude-haiku-4.5', 'anthropic/claude-sonnet-5'] });

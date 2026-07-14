@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import type { DB } from '../db/db.js';
 import type { AppConfig } from '../config.js';
 import { sessionUserId } from './auth.js';
+import { isAllowlisted } from '../db/users.js';
 import { verifyByToken } from '../db/sessions.js';
 import { registerHomeRoutes } from './routes/home.js';
 import { registerModelsRoutes } from './routes/models.js';
@@ -59,7 +60,7 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
     if (PUBLIC_PATHS.has(req.url.split('?')[0]!)) return;
     const token = req.cookies.token;
     const userId = sessionUserId(deps.db, token);
-    if (!userId) {
+    if (!userId || !isAllowlisted(deps.db, userId)) {
       reply.redirect('/login');
       return reply;
     }
@@ -72,7 +73,7 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
     if (req.query.token) {
       const sessionToken = verifyByToken(deps.db, req.query.token);
       if (sessionToken) {
-        reply.setCookie('token', sessionToken, { path: '/', httpOnly: true, sameSite: 'lax' });
+        reply.setCookie('token', sessionToken, { path: '/', httpOnly: true, sameSite: 'lax', secure: true });
         reply.redirect('/');
         return;
       }
@@ -96,7 +97,7 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
     );
   });
 
-  app.get('/logout', async (_req, reply) => {
+  app.post('/logout', async (_req, reply) => {
     reply.clearCookie('token', { path: '/' });
     reply.redirect('/login');
   });

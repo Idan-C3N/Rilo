@@ -72,6 +72,7 @@ export function registerOauthRoutes(app: FastifyInstance, db: DB, opts: OauthRou
       signed: true,
       httpOnly: true,
       sameSite: 'lax', // callback is a top-level cross-site redirect from Google
+      secure: true,
       path: '/',
       maxAge: STATE_TTL_SEC,
     });
