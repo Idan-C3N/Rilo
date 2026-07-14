@@ -3,6 +3,24 @@ import { createMCPClient } from '@ai-sdk/mcp';
 import { Experimental_StdioMCPTransport } from '@ai-sdk/mcp/mcp-stdio';
 import type { DB } from '../db/db.js';
 import { listEnabledMcpServers, type McpServer } from '../db/mcp.js';
+import { MCP_PRESETS } from './presets.js';
+
+function urlHost(u?: string): string {
+  try { return u ? new URL(u).host : ''; } catch { return ''; }
+}
+// A server is allowed only if it matches a shipped preset: same transport, and
+// (stdio) same command+args, or (http/sse) same URL host. Creds/tokens vary per
+// user and are ignored. This neutralizes any custom row inserted before the
+// custom-server form was removed (the RCE/SSRF vector).
+function presetSig(transport: string, command: string | undefined, args: string[], url?: string): string {
+  return transport === 'stdio'
+    ? `stdio|${command ?? ''}|${JSON.stringify(args)}`
+    : `${transport}|${urlHost(url)}`;
+}
+const PRESET_SIGS = new Set(MCP_PRESETS.map((p) => presetSig(p.transport, p.command, p.args ?? [], p.url)));
+export function isPresetServer(s: McpServer): boolean {
+  return PRESET_SIGS.has(presetSig(s.transport, s.command, s.args, s.url));
+}
 
 export interface McpClientLike {
   tools(): Promise<ToolSet>;
@@ -40,6 +58,10 @@ export async function assembleMcpTools(
   const tools: ToolSet = {};
 
   for (const server of listEnabledMcpServers(deps.db, userId)) {
+    if (!isPresetServer(server)) {
+      console.warn(`MCP server "${server.name}" is not a known preset — skipping (custom servers are disabled).`);
+      continue;
+    }
     try {
       const client = await make(server);
       clients.push(client);

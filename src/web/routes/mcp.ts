@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { DB } from '../../db/db.js';
-import { addMcpServer, listMcpServers, setMcpEnabled, deleteMcpServer, type McpTransport } from '../../db/mcp.js';
+import { addMcpServer, listMcpServers, setMcpEnabled, deleteMcpServer } from '../../db/mcp.js';
 import { MCP_PRESETS, getPreset } from '../../mcp/presets.js';
 import { hasOAuthToken, setOAuthToken, deleteOAuthToken } from '../../db/oauth.js';
 import { layout, esc, type Flash } from '../render.js';
@@ -91,28 +91,7 @@ function renderServicesBody(db: DB, userId: number, opts: McpRouteOpts): string 
         <h2>Connect a service</h2>
         ${googleConnect}
         ${renderPresets()}
-        <details><summary>Advanced: connect a custom MCP server manually</summary>
-        <div class="card"><h3>Add server</h3>
-        <form method="post" action="/mcp">
-          <label>Name<input name="name" required></label>
-          <label>Transport
-            <select name="transport"><option value="stdio">stdio</option><option value="http">http</option><option value="sse">sse</option></select>
-          </label>
-          <label>Command (stdio)<input name="command" placeholder="node"></label>
-          <label>Args (space-separated)<input name="args" placeholder="server.js --flag"></label>
-          <label>URL (http/sse)<input name="url" placeholder="https://host/mcp"></label>
-          <label>Creds (KEY=VALUE per line)<textarea name="creds" rows="3"></textarea></label>
-          <button type="submit">Add</button>
-        </form></div></details></div>`;
-}
-
-function parseCreds(text: string): Record<string, string> | undefined {
-  const out: Record<string, string> = {};
-  for (const line of text.split('\n').map((l) => l.trim()).filter(Boolean)) {
-    const idx = line.indexOf('=');
-    if (idx > 0) out[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-  }
-  return Object.keys(out).length ? out : undefined;
+        </div>`;
 }
 
 interface McpRouteOpts {
@@ -168,23 +147,6 @@ export function registerMcpRoutes(
     });
     reply.redirect('/mcp?saved=connected');
   });
-
-  app.post<{ Body: { name: string; transport: McpTransport; command?: string; args?: string; url?: string; creds?: string } }>(
-    '/mcp',
-    async (req, reply) => {
-      const userId = (req as any).userId as number;
-      const b = req.body;
-      addMcpServer(db, userId, {
-        name: b.name,
-        transport: b.transport,
-        command: b.command || undefined,
-        args: (b.args ?? '').split(/\s+/).filter(Boolean),
-        url: b.url || undefined,
-        creds: parseCreds(b.creds ?? ''),
-      });
-      reply.redirect('/mcp?saved=connected');
-    },
-  );
 
   app.post<{ Body: { refresh_token?: string } }>('/google/connect', async (req, reply) => {
     const userId = (req as any).userId as number;

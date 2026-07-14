@@ -36,18 +36,6 @@ describe('mcp preset catalog', () => {
     expect(s.creds).toEqual({ SLACK_BOT_TOKEN: 'xoxb-abc', SLACK_TEAM_ID: 'T123' });
   });
 
-  it('custom-http preset maps __url to the server url and Authorization to creds', async () => {
-    const res = await app.inject({
-      method: 'POST', url: '/mcp/preset', headers: { cookie },
-      payload: { preset_id: 'custom-http', __url: 'https://my/mcp', Authorization: 'Bearer tok' },
-    });
-    expect(res.statusCode).toBe(302);
-    const s = listMcpServers(db, uid)[0]!;
-    expect(s.transport).toBe('http');
-    expect(s.url).toBe('https://my/mcp');
-    expect(s.creds).toEqual({ Authorization: 'Bearer tok' });
-  });
-
   it('unknown preset id is a no-op redirect', async () => {
     const res = await app.inject({
       method: 'POST', url: '/mcp/preset', headers: { cookie },
@@ -111,19 +99,16 @@ describe('google connect flow', () => {
 });
 
 describe('mcp route', () => {
-  it('adds an http mcp server with parsed creds', async () => {
+  it('POST /mcp custom-server route is removed', async () => {
     const res = await app.inject({
       method: 'POST', url: '/mcp', headers: { cookie },
-      payload: { name: 'gh', transport: 'http', url: 'https://x/mcp', command: '', args: '', creds: 'Authorization=Bearer z' },
+      payload: { name: 'x', transport: 'stdio', command: '/bin/sh' },
     });
-    expect(res.statusCode).toBe(302);
-    const list = listMcpServers(db, uid);
-    expect(list[0]!.name).toBe('gh');
-    expect(list[0]!.creds).toEqual({ Authorization: 'Bearer z' });
+    expect(res.statusCode).toBe(404); // route no longer exists
   });
 
   it('toggles and deletes a server', async () => {
-    await app.inject({ method: 'POST', url: '/mcp', headers: { cookie }, payload: { name: 's', transport: 'stdio', command: 'node', args: 'x.js', url: '', creds: '' } });
+    addMcpServer(db, uid, { name: 's', transport: 'stdio', command: 'node', args: ['x.js'] });
     const id = listMcpServers(db, uid)[0]!.id;
     await app.inject({ method: 'POST', url: `/mcp/${id}/toggle`, headers: { cookie } });
     expect(listMcpServers(db, uid)[0]!.enabled).toBe(false);
