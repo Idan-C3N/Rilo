@@ -11,7 +11,7 @@ const NAV: Array<{ key: NavKey; href: string; label: string }> = [
   { key: 'models', href: '/models', label: 'Models' },
   { key: 'services', href: '/mcp', label: 'Services' },
   { key: 'spaces', href: '/spaces', label: 'Spaces' },
-  { key: 'reminders', href: '/reminders', label: 'Reminders' },
+  { key: 'reminders', href: '/reminders', label: 'Recurring reminders' },
 ];
 
 export function esc(s: string): string {
