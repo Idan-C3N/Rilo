@@ -27,4 +27,26 @@ describe('rate limiting', () => {
     }
     expect(codes).toContain(429); // cap is 5/min → later requests rejected
   });
+
+  it('rate limits are keyed per-client via X-Forwarded-For, not shared across clients', async () => {
+    const clientACodes: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/register',
+        headers: { 'x-forwarded-for': '1.1.1.1' },
+        payload: { name: 'x', phone: '123' },
+      });
+      clientACodes.push(res.statusCode);
+    }
+    expect(clientACodes).toContain(429); // client A tripped the 5/min cap
+
+    const clientBRes = await app.inject({
+      method: 'POST',
+      url: '/register',
+      headers: { 'x-forwarded-for': '2.2.2.2' },
+      payload: { name: 'y', phone: '456' },
+    });
+    expect(clientBRes.statusCode).toBeLessThan(429); // client B unaffected
+  });
 });

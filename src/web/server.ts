@@ -48,7 +48,13 @@ const HTMX_JS = readFileSync(new URL('./vendor/htmx.min.js', import.meta.url), '
 const PUBLIC_PATHS = new Set(['/login', '/register', '/vendor/htmx.min.js', '/oauth/google/callback']);
 
 export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
-  const app = Fastify();
+  // Trust the reverse proxy (Caddy) so req.ip resolves from X-Forwarded-For
+  // rather than the socket peer. The app port is never published to the
+  // host — only Caddy can reach this process and set that header — so
+  // trusting it does not open a spoofing path. Without this, @fastify/
+  // rate-limit keys every client on Caddy's single internal IP, collapsing
+  // all clients into one shared bucket.
+  const app = Fastify({ trustProxy: true });
   // Secret enables signed cookies (the OAuth `state` cookie). Derive a
   // domain-separated signing key from ENC_KEY rather than reusing the raw
   // encryption key for a second purpose. Harmless when absent (only OAuth
