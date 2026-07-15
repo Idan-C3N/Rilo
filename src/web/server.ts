@@ -54,7 +54,11 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
   // trusting it does not open a spoofing path. Without this, @fastify/
   // rate-limit keys every client on Caddy's single internal IP, collapsing
   // all clients into one shared bucket.
-  const app = Fastify({ trustProxy: true });
+  // Trust exactly ONE proxy hop (Caddy). With `true`, proxy-addr would take the
+  // leftmost X-Forwarded-For entry — which the client can forge — letting an
+  // attacker rotate a fake IP per request and escape the rate limiter. `1` uses
+  // the entry Caddy appended (the real peer), which the client cannot control.
+  const app = Fastify({ trustProxy: 1 });
   // Secret enables signed cookies (the OAuth `state` cookie). Derive a
   // domain-separated signing key from ENC_KEY rather than reusing the raw
   // encryption key for a second purpose. Harmless when absent (only OAuth

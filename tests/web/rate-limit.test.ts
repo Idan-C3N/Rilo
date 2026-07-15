@@ -49,4 +49,21 @@ describe('rate limiting', () => {
     });
     expect(clientBRes.statusCode).toBeLessThan(429); // client B unaffected
   });
+
+  it('a forged leftmost X-Forwarded-For cannot escape the bucket (trustProxy: 1)', async () => {
+    // Caddy appends the real peer, so the header arrives as `<client-forged>, <realIP>`.
+    // With trustProxy:1 the real (rightmost) IP is used, so rotating the forged
+    // leftmost value must NOT create fresh buckets — the attacker stays throttled.
+    const codes: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/register',
+        headers: { 'x-forwarded-for': `9.9.9.${i}, 5.5.5.5` }, // fake leftmost varies; real peer constant
+        payload: { name: 'x', phone: '123' },
+      });
+      codes.push(res.statusCode);
+    }
+    expect(codes).toContain(429); // all keyed to 5.5.5.5 despite the rotating fake → still capped
+  });
 });

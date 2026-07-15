@@ -3,6 +3,8 @@ import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { buildWebApp } from '../../src/web/server.js';
+import { createUserWithIdentity, setAllowlisted } from '../../src/db/users.js';
+import { startLogin, verifyByToken } from '../../src/db/sessions.js';
 
 let db: DB, app: any;
 
@@ -29,5 +31,22 @@ describe('security headers', () => {
     const csp = String(res.headers['content-security-policy']);
     expect(csp).toMatch(/script-src[^;]*'self'/);
     expect(csp).toMatch(/style-src[^;]*'unsafe-inline'/);
+  });
+});
+
+describe('error handler (L3)', () => {
+  it('a 5xx returns a generic body and never echoes the internal error message', async () => {
+    const u = createUserWithIdentity(db, { channel: 'telegram', externalId: 'a', heartbeat_interval_min: 30 });
+    setAllowlisted(db, u.id, true);
+    const { token } = startLogin(db, u.id);
+    const cookie = `token=${verifyByToken(db, token)}`;
+    // An authed route that throws with a secret-bearing message.
+    app.get('/__boom', async () => {
+      throw new Error('SECRET-INTERNAL-DETAIL-xyz');
+    });
+    const res = await app.inject({ method: 'GET', url: '/__boom', headers: { cookie } });
+    expect(res.statusCode).toBe(500);
+    expect(res.body).not.toContain('SECRET-INTERNAL-DETAIL-xyz'); // internal message not leaked
+    expect(res.body).toContain('Something went wrong.'); // generic message shown
   });
 });
