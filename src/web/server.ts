@@ -1,11 +1,14 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyError } from 'fastify';
 import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
+import rateLimit from '@fastify/rate-limit';
+import helmet from '@fastify/helmet';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { DB } from '../db/db.js';
 import type { AppConfig } from '../config.js';
 import { sessionUserId } from './auth.js';
+import { isAllowlisted } from '../db/users.js';
 import { verifyByToken } from '../db/sessions.js';
 import { registerHomeRoutes } from './routes/home.js';
 import { registerModelsRoutes } from './routes/models.js';
@@ -17,6 +20,7 @@ import { registerSpacesRoutes } from './routes/spaces.js';
 import { registerRemindersRoutes } from './routes/reminders.js';
 import { layout, flash } from './render.js';
 import { getModelIds } from '../openrouter/catalog.js';
+import { log } from '../log.js';
 
 export interface WebDeps {
   db: DB;
@@ -44,7 +48,17 @@ const HTMX_JS = readFileSync(new URL('./vendor/htmx.min.js', import.meta.url), '
 const PUBLIC_PATHS = new Set(['/login', '/register', '/vendor/htmx.min.js', '/oauth/google/callback']);
 
 export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
-  const app = Fastify();
+  // Trust the reverse proxy (Caddy) so req.ip resolves from X-Forwarded-For
+  // rather than the socket peer. The app port is never published to the
+  // host — only Caddy can reach this process and set that header — so
+  // trusting it does not open a spoofing path. Without this, @fastify/
+  // rate-limit keys every client on Caddy's single internal IP, collapsing
+  // all clients into one shared bucket.
+  // Trust exactly ONE proxy hop (Caddy). With `true`, proxy-addr would take the
+  // leftmost X-Forwarded-For entry — which the client can forge — letting an
+  // attacker rotate a fake IP per request and escape the rate limiter. `1` uses
+  // the entry Caddy appended (the real peer), which the client cannot control.
+  const app = Fastify({ trustProxy: 1 });
   // Secret enables signed cookies (the OAuth `state` cookie). Derive a
   // domain-separated signing key from ENC_KEY rather than reusing the raw
   // encryption key for a second purpose. Harmless when absent (only OAuth
@@ -54,12 +68,28 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
     : undefined;
   await app.register(cookie, { secret: cookieSecret });
   await app.register(formbody);
+  await app.register(rateLimit, { global: true, max: 100, timeWindow: '1 minute' });
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // app injects an inline <style>
+        imgSrc: ["'self'", 'data:'],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        objectSrc: ["'none'"],
+      },
+    },
+    // HSTS on by default; keep it. nosniff + frameguard are helmet defaults.
+  });
 
   app.addHook('preHandler', async (req, reply) => {
     if (PUBLIC_PATHS.has(req.url.split('?')[0]!)) return;
     const token = req.cookies.token;
     const userId = sessionUserId(deps.db, token);
-    if (!userId) {
+    if (!userId || !isAllowlisted(deps.db, userId)) {
       reply.redirect('/login');
       return reply;
     }
@@ -72,7 +102,7 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
     if (req.query.token) {
       const sessionToken = verifyByToken(deps.db, req.query.token);
       if (sessionToken) {
-        reply.setCookie('token', sessionToken, { path: '/', httpOnly: true, sameSite: 'lax' });
+        reply.setCookie('token', sessionToken, { path: '/', httpOnly: true, sameSite: 'lax', secure: true });
         reply.redirect('/');
         return;
       }
@@ -96,7 +126,7 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
     );
   });
 
-  app.get('/logout', async (_req, reply) => {
+  app.post('/logout', async (_req, reply) => {
     reply.clearCookie('token', { path: '/' });
     reply.redirect('/login');
   });
@@ -128,6 +158,15 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
   registerPendingRoutes(app, deps.db, { notify: deps.notify });
   registerSpacesRoutes(app, deps.db);
   registerRemindersRoutes(app, deps.db);
+
+  app.setErrorHandler((err: FastifyError, req, reply) => {
+    const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 500;
+    if (status >= 500) log.error({ event: 'web.error', err, url: req.url }, 'unhandled web error');
+    reply.status(status).type('text/html').send(
+      layout('Error', `<div class="card">${flash('error', status >= 500 ? 'Something went wrong.' : 'Bad request.')}</div>`, { bare: true }),
+    );
+  });
+
   return app;
 }
 

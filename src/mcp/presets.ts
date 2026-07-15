@@ -42,17 +42,6 @@ export const MCP_PRESETS: McpPreset[] = [
       { field: 'SLACK_TEAM_ID', label: 'Workspace/Team ID', placeholder: 'T0123ABC' },
     ],
   },
-  {
-    id: 'custom-http',
-    label: 'Custom hosted MCP (URL)',
-    description: 'Connect any hosted MCP server by URL. Optional bearer token.',
-    transport: 'http',
-    url: '', // filled from the __url field the user provides
-    secrets: [
-      { field: '__url', label: 'Server URL', placeholder: 'https://host/mcp' },
-      { field: 'Authorization', label: 'Auth header (optional)', placeholder: 'Bearer xxx' },
-    ],
-  },
 ];
 
 export function getPreset(id: string): McpPreset | undefined {

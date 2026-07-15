@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { summarizeSteps } from '../src/log.js';
+import { summarizeSteps, REDACT_PATHS } from '../src/log.js';
+
+describe('REDACT_PATHS', () => {
+  it('redacts credential-bearing keys', () => {
+    for (const k of ['creds', '*.creds', 'key', 'api_key']) expect(REDACT_PATHS).toContain(k);
+  });
+});
 
 describe('summarizeSteps', () => {
   it('extracts tool names + arg keys (never values)', () => {

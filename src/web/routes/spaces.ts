@@ -73,11 +73,15 @@ export function registerSpacesRoutes(app: FastifyInstance, db: DB): void {
     reply.redirect('/spaces');
   });
 
-  app.post<{ Body: { code?: string } }>('/spaces/redeem', async (req, reply) => {
-    const code = (req.body?.code ?? '').trim().toUpperCase();
-    if (code) redeemInvite(db, code, uidOf(req));
-    reply.redirect('/spaces');
-  });
+  app.post<{ Body: { code?: string } }>(
+    '/spaces/redeem',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const code = (req.body?.code ?? '').trim().toUpperCase();
+      if (code) redeemInvite(db, code, uidOf(req));
+      reply.redirect('/spaces');
+    },
+  );
 
   app.post<{ Params: { id: string } }>('/spaces/:id/leave', async (req, reply) => {
     removeMember(db, Number(req.params.id), uidOf(req));

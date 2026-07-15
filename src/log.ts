@@ -3,13 +3,15 @@ import { pino } from 'pino';
 // Structured JSON logger. One line per event → `docker compose logs app | jq`.
 // `silent` under vitest so tests don't spew. LOG_LEVEL=debug surfaces message
 // content + full context; default `info` logs lengths/metadata only (PII-safe).
+export const REDACT_PATHS = [
+  'token', 'phone', 'refresh_token', 'authorization', 'openrouterKey', 'creds', 'key', 'api_key',
+  '*.token', '*.phone', '*.refresh_token', '*.authorization', '*.openrouterKey', '*.creds', '*.key', '*.api_key',
+];
+
 export const log = pino({
   level: process.env.LOG_LEVEL ?? (process.env.VITEST ? 'silent' : 'info'),
   redact: {
-    paths: [
-      'token', 'phone', 'refresh_token', 'authorization', 'openrouterKey',
-      '*.token', '*.phone', '*.refresh_token', '*.authorization', '*.openrouterKey',
-    ],
+    paths: REDACT_PATHS,
     censor: '[redacted]',
   },
 });

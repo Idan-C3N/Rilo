@@ -29,26 +29,30 @@ export function registerRegisterRoutes(
     reply.type('text/html').send(formPage());
   });
 
-  app.post<{ Body: { name?: string; phone?: string } }>('/register', async (req, reply) => {
-    const name = (req.body.name ?? '').trim();
-    const phone = (req.body.phone ?? '').trim();
-    if (!name || !phone) {
-      reply.type('text/html').send(formPage('Please enter both your name and phone number.'));
-      return;
-    }
-    const reg = createRegistration(db, { name, phone });
-    const link = opts.registrationLink(reg.code);
-    reply.type('text/html').send(
-      layout(
-        'Almost there',
-        `<div class="card">
+  app.post<{ Body: { name?: string; phone?: string } }>(
+    '/register',
+    { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const name = (req.body.name ?? '').trim();
+      const phone = (req.body.phone ?? '').trim();
+      if (!name || !phone) {
+        reply.type('text/html').send(formPage('Please enter both your name and phone number.'));
+        return;
+      }
+      const reg = createRegistration(db, { name, phone });
+      const link = opts.registrationLink(reg.code);
+      reply.type('text/html').send(
+        layout(
+          'Almost there',
+          `<div class="card">
           <h2>One more step</h2>
           <p>Open Telegram to finish verifying your number:</p>
           <p><a href="${esc(link)}">${esc(link)}</a></p>
           <p class="muted">If the link doesn't open, start the bot and send:<br><code>/start ${esc(reg.code)}</code></p>
         </div>`,
-        { bare: true },
-      ),
-    );
-  });
+          { bare: true },
+        ),
+      );
+    },
+  );
 }

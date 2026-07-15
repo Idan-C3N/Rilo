@@ -37,7 +37,7 @@ export function layout(
 ): string {
   const nav = opts.bare
     ? ''
-    : `<nav class="nav">${NAV.map((n) => navLink(n.href, n.label, opts.active === n.key)).join('')}<a href="/logout">Log out</a></nav>`;
+    : `<nav class="nav">${NAV.map((n) => navLink(n.href, n.label, opts.active === n.key)).join('')}<form method="post" action="/logout" class="nav-logout" style="display:inline"><button type="submit">Log out</button></form></nav>`;
   const flashHtml = opts.flash ? flash(opts.flash.kind, opts.flash.msg) : '';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
   <title>${esc(title)} · Rilo</title>

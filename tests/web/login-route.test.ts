@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import { openDb, type DB } from '../../src/db/db.js';
-import { createUserWithIdentity } from '../../src/db/users.js';
+import { createUserWithIdentity, setAllowlisted } from '../../src/db/users.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
 import { startLogin, verifyByToken } from '../../src/db/sessions.js';
 import { buildWebApp } from '../../src/web/server.js';
@@ -58,10 +58,11 @@ describe('magic-link login', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('GET /logout clears the cookie and redirects to /login', async () => {
+  it('POST /logout clears the cookie and redirects to /login', async () => {
+    setAllowlisted(db, uid, true);
     const { token } = startLogin(db, uid);
     const cookie = `token=${verifyByToken(db, token)}`;
-    const res = await app.inject({ method: 'GET', url: '/logout', headers: { cookie } });
+    const res = await app.inject({ method: 'POST', url: '/logout', headers: { cookie } });
     expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe('/login');
     const setCookie = String(res.headers['set-cookie'] ?? '');
