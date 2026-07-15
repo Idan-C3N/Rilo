@@ -16,6 +16,7 @@
     "@ai-sdk/mcp": "^1.0.0",
     "@fastify/cookie": "^10.0.0",
     "@fastify/formbody": "^8.0.0",
+    "@fastify/helmet": "^12.0.1",
     "@fastify/rate-limit": "^10.3.0",
     "@openrouter/ai-sdk-provider": "^1.5.4",
     "ai": "^5.0.0",

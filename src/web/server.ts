@@ -1,7 +1,8 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyError } from 'fastify';
 import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
 import rateLimit from '@fastify/rate-limit';
+import helmet from '@fastify/helmet';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { DB } from '../db/db.js';
@@ -19,6 +20,7 @@ import { registerSpacesRoutes } from './routes/spaces.js';
 import { registerRemindersRoutes } from './routes/reminders.js';
 import { layout, flash } from './render.js';
 import { getModelIds } from '../openrouter/catalog.js';
+import { log } from '../log.js';
 
 export interface WebDeps {
   db: DB;
@@ -57,6 +59,21 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
   await app.register(cookie, { secret: cookieSecret });
   await app.register(formbody);
   await app.register(rateLimit, { global: true, max: 100, timeWindow: '1 minute' });
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // app injects an inline <style>
+        imgSrc: ["'self'", 'data:'],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        objectSrc: ["'none'"],
+      },
+    },
+    // HSTS on by default; keep it. nosniff + frameguard are helmet defaults.
+  });
 
   app.addHook('preHandler', async (req, reply) => {
     if (PUBLIC_PATHS.has(req.url.split('?')[0]!)) return;
@@ -131,6 +148,15 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
   registerPendingRoutes(app, deps.db, { notify: deps.notify });
   registerSpacesRoutes(app, deps.db);
   registerRemindersRoutes(app, deps.db);
+
+  app.setErrorHandler((err: FastifyError, req, reply) => {
+    const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 500;
+    if (status >= 500) log.error({ event: 'web.error', err, url: req.url }, 'unhandled web error');
+    reply.status(status).type('text/html').send(
+      layout('Error', `<div class="card">${flash('error', status >= 500 ? 'Something went wrong.' : 'Bad request.')}</div>`, { bare: true }),
+    );
+  });
+
   return app;
 }
 
