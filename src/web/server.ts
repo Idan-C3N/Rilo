@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
+import rateLimit from '@fastify/rate-limit';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { DB } from '../db/db.js';
@@ -55,6 +56,7 @@ export async function buildWebApp(deps: WebDeps): Promise<FastifyInstance> {
     : undefined;
   await app.register(cookie, { secret: cookieSecret });
   await app.register(formbody);
+  await app.register(rateLimit, { global: true, max: 100, timeWindow: '1 minute' });
 
   app.addHook('preHandler', async (req, reply) => {
     if (PUBLIC_PATHS.has(req.url.split('?')[0]!)) return;
