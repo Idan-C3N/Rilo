@@ -4,7 +4,7 @@ import { openDb, type DB } from '../../src/db/db.js';
 import { createUserWithIdentity, setAllowlisted } from '../../src/db/users.js';
 import { setOpenrouterKey } from '../../src/db/config.js';
 import { initCrypto } from '../../src/crypto/encryption.js';
-import { pendingHeartbeat } from '../../src/db/jobs.js';
+import { pendingHeartbeat, addJob } from '../../src/db/jobs.js';
 import { recentMessages } from '../../src/db/messages.js';
 import { fireHeartbeat, seedHeartbeats } from '../../src/scheduler/heartbeat.js';
 
@@ -40,6 +40,14 @@ describe('heartbeat', () => {
   it('reschedules the next heartbeat every fire', async () => {
     await fireHeartbeat(deps({ act: false }), job());
     expect(pendingHeartbeat(db, uid)).toBeDefined();
+  });
+
+  it('does not create a duplicate heartbeat when one is already pending', async () => {
+    // A pending heartbeat already exists (e.g. a prior stacked/duplicate job).
+    addJob(db, { userId: uid, type: 'heartbeat', fireAt: Date.now() + 999_999, payload: {} });
+    await fireHeartbeat(deps({ act: false }), job());
+    expect(db.prepare("SELECT COUNT(*) c FROM jobs WHERE type='heartbeat' AND status='pending'").get())
+      .toEqual({ c: 1 }); // guard prevents runaway duplication
   });
 
   it('stays silent when gate says no', async () => {
