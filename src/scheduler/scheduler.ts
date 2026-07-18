@@ -2,7 +2,7 @@ import type { DB } from '../db/db.js';
 import type { AppConfig } from '../config.js';
 import type { ChannelAdapter } from '../channels/adapter.js';
 import type { GenerateFn } from '../agent/core.js';
-import { dueJobs, markDone, rearmJob, type Job } from '../db/jobs.js';
+import { claimDueJobs, reclaimOrphans, failJob, markDone, rearmJob, type Job } from '../db/jobs.js';
 import { getUserById } from '../db/users.js';
 import { nextFireAt } from './recurrence.js';
 
@@ -16,10 +16,14 @@ export interface SchedulerDeps {
   fireHeartbeat: (deps: SchedulerDeps, job: Job) => Promise<void>;
 }
 
-const POLL_MS = 15000;
+export const POLL_MS = 15000;
+export const BATCH = 100;        // max jobs claimed per tick (bounds a single tick's work)
+export const MAX_ATTEMPTS = 5;   // retire a repeatedly-failing job to 'failed' after this many tries
 
 export async function tick(deps: SchedulerDeps, now: number): Promise<void> {
-  for (const job of dueJobs(deps.db, now)) {
+  // Atomically claim a bounded batch (pending -> running) up front, so an
+  // overlapping tick can never see or re-dispatch these same rows.
+  for (const job of claimDueJobs(deps.db, now, BATCH)) {
     try {
       if (job.type === 'heartbeat') {
         await deps.fireHeartbeat(deps, job);
@@ -30,7 +34,9 @@ export async function tick(deps: SchedulerDeps, now: number): Promise<void> {
       }
     } catch (err) {
       console.error(`job ${job.id} (${job.type}) failed:`, err);
-      // left pending → retried next tick; not re-armed until a successful fire
+      // Increment attempts; re-arm to pending for retry, or retire to 'failed'
+      // once MAX_ATTEMPTS is reached (stops a poison job looping forever).
+      failJob(deps.db, job.id, MAX_ATTEMPTS);
     }
   }
 }
@@ -58,9 +64,25 @@ function reschedule(deps: SchedulerDeps, job: Job, now: number): void {
   }
 }
 
+// Self-scheduling setTimeout chain (not setInterval): the next tick is armed
+// only AFTER the current one fully awaits. setInterval fired every POLL_MS
+// regardless of tick duration, so a tick running longer than POLL_MS overlapped
+// itself and, before atomic claiming, double-dispatched the same due rows.
 export function startScheduler(deps: SchedulerDeps): { stop(): void } {
-  const timer = setInterval(() => {
-    void tick(deps, Date.now());
-  }, POLL_MS);
-  return { stop: () => clearInterval(timer) };
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  reclaimOrphans(deps.db); // recover jobs stranded 'running' by a prior crash/restart
+  const loop = async (): Promise<void> => {
+    if (stopped) return;
+    await tick(deps, Date.now());
+    if (stopped) return;
+    timer = setTimeout(() => void loop(), POLL_MS);
+  };
+  timer = setTimeout(() => void loop(), POLL_MS);
+  return {
+    stop: () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    },
+  };
 }

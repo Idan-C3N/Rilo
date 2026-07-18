@@ -1,8 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { openDb, type DB } from '../../src/db/db.js';
 import { createUserWithIdentity } from '../../src/db/users.js';
-import { addJob, dueJobs } from '../../src/db/jobs.js';
-import { tick } from '../../src/scheduler/scheduler.js';
+import { addJob, dueJobs, claimDueJobs } from '../../src/db/jobs.js';
+import { tick, startScheduler, BATCH, MAX_ATTEMPTS, POLL_MS } from '../../src/scheduler/scheduler.js';
+
+const statusOf = (db: DB, id: number) =>
+  (db.prepare('SELECT status FROM jobs WHERE id=?').get(id) as { status: string }).status;
 
 let db: DB, uid: number;
 beforeEach(() => {
@@ -55,6 +58,65 @@ describe('scheduler tick', () => {
     expect(fired).toEqual([good]);
     // bad still pending for retry, good is done
     expect(dueJobs(db, 100).map((j) => j.id)).toEqual([bad]);
+  });
+});
+
+describe('scheduler tick — resilience', () => {
+  it('claims at most BATCH jobs per tick, leaving the rest pending', async () => {
+    for (let i = 0; i < BATCH + 5; i++) addJob(db, { userId: uid, type: 'reminder', fireAt: i, payload: {} });
+    const { fired, d } = deps();
+    await tick(d as any, 10_000);
+    expect(fired).toHaveLength(BATCH);
+    expect(dueJobs(db, 10_000)).toHaveLength(5); // overflow stays pending for the next tick
+  });
+
+  it('fires a due job exactly once across back-to-back ticks (no double dispatch)', async () => {
+    const id = addJob(db, { userId: uid, type: 'reminder', fireAt: 10, payload: {} });
+    const { fired, d } = deps();
+    await tick(d as any, 100);
+    await tick(d as any, 100);
+    expect(fired).toEqual([['reminder', id]]);
+  });
+
+  it('retires a persistently throwing job to failed after MAX_ATTEMPTS ticks', async () => {
+    const bad = addJob(db, { userId: uid, type: 'reminder', fireAt: 1, payload: {} });
+    const { d } = deps({ fireReminder: async () => { throw new Error('boom'); } });
+    for (let i = 0; i < MAX_ATTEMPTS; i++) await tick(d as any, 100);
+    expect(statusOf(db, bad)).toBe('failed');
+    // a further tick must not re-dispatch it
+    const { fired, d: d2 } = deps({ fireReminder: async () => { throw new Error('boom'); } });
+    await tick(d2 as any, 100);
+    expect(fired).toEqual([]);
+  });
+
+  it('reclaims an orphaned running job at startup and fires it on the first tick', async () => {
+    const id = addJob(db, { userId: uid, type: 'reminder', fireAt: 10, payload: {} });
+    claimDueJobs(db, 100, 100); // simulate a crash mid-tick: job stuck 'running'
+    expect(statusOf(db, id)).toBe('running');
+    vi.useFakeTimers();
+    try {
+      const { fired, d } = deps();
+      const s = startScheduler(d as any);
+      await vi.advanceTimersByTimeAsync(POLL_MS + 5);
+      s.stop();
+      expect(fired).toEqual([['reminder', id]]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stop() halts further ticks', async () => {
+    addJob(db, { userId: uid, type: 'reminder', fireAt: 10, payload: {} });
+    vi.useFakeTimers();
+    try {
+      const { fired, d } = deps();
+      const s = startScheduler(d as any);
+      s.stop();
+      await vi.advanceTimersByTimeAsync(POLL_MS * 3);
+      expect(fired).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
