@@ -45,13 +45,18 @@ export async function fireHeartbeat(deps: HeartbeatDeps, job: Job): Promise<void
   if (!user) return; // user deleted — nothing to reschedule from
   if (!isAllowlisted(deps.db, user.id)) return; // de-allowlisted: stop the chain (re-allowlist + restart reseeds)
 
-  // 1. ALWAYS reschedule the next heartbeat first (before quiet/identity checks).
-  addJob(deps.db, {
-    userId: user.id,
-    type: 'heartbeat',
-    fireAt: Date.now() + user.heartbeat_interval_min * 60000,
-    payload: {},
-  });
+  // 1. Reschedule the next heartbeat first (before quiet/identity checks), but
+  // only if one isn't already pending. This dedup guard is the last line of
+  // defense against runaway duplication: if two heartbeats ever fire in the same
+  // window, without it each would enqueue another and the backlog compounds.
+  if (!pendingHeartbeat(deps.db, user.id)) {
+    addJob(deps.db, {
+      userId: user.id,
+      type: 'heartbeat',
+      fireAt: Date.now() + user.heartbeat_interval_min * 60000,
+      payload: {},
+    });
+  }
 
   try {
     // 2. Quiet hours → silent (already rescheduled).

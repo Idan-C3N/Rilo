@@ -31,7 +31,7 @@ describe('fireReminder', () => {
         return { text: 'Reminder: buy milk 🥛' };
       },
     };
-    await fireReminder(deps, { id: 1, user_id: uid, type: 'reminder', fire_at: 0, payload: { text: 'buy milk' }, status: 'pending', recurrence: null, recurrence_until: null, recurrence_count: null });
+    await fireReminder(deps, { id: 1, user_id: uid, type: 'reminder', fire_at: 0, payload: { text: 'buy milk' }, status: 'pending', recurrence: null, recurrence_until: null, recurrence_count: null, attempts: 0 });
     expect(sent).toEqual([['chat55', 'Reminder: buy milk 🥛']]);
     expect(recentMessages(db, uid, 5).at(-1)?.content).toBe('Reminder: buy milk 🥛');
   });
@@ -45,7 +45,7 @@ describe('fireReminder', () => {
         return { text: 'Did you get a chance to submit that tax form?' };
       },
     };
-    await fireReminder(deps, { id: 2, user_id: uid, type: 'followup', fire_at: 0, payload: { task: 'submit tax form' }, status: 'pending', recurrence: null, recurrence_until: null, recurrence_count: null });
+    await fireReminder(deps, { id: 2, user_id: uid, type: 'followup', fire_at: 0, payload: { task: 'submit tax form' }, status: 'pending', recurrence: null, recurrence_until: null, recurrence_count: null, attempts: 0 });
     expect(sent).toEqual([['chat55', 'Did you get a chance to submit that tax form?']]);
     expect(recentMessages(db, uid, 5).at(-1)?.content).toBe('Did you get a chance to submit that tax form?');
   });
@@ -57,7 +57,7 @@ describe('fireReminder', () => {
       adapter: { send: async (id: string, text: string) => { sent.push([id, text]); } },
       generate: async () => { throw new Error('should not be called'); },
     };
-    await fireReminder(deps, { id: 3, user_id: uid, type: 'reminder', fire_at: 0, payload: { text: 'buy milk' }, status: 'pending', recurrence: null, recurrence_until: null, recurrence_count: null });
+    await fireReminder(deps, { id: 3, user_id: uid, type: 'reminder', fire_at: 0, payload: { text: 'buy milk' }, status: 'pending', recurrence: null, recurrence_until: null, recurrence_count: null, attempts: 0 });
     expect(sent).toEqual([]);
   });
 });

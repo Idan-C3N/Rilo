@@ -51,11 +51,12 @@ CREATE TABLE IF NOT EXISTS jobs (
   type TEXT NOT NULL,           -- 'reminder' | 'followup' | 'heartbeat'
   fire_at INTEGER NOT NULL,
   payload_json TEXT NOT NULL DEFAULT '{}',
-  status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'done' | 'cancelled'
+  status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
   created_at INTEGER NOT NULL,
   recurrence TEXT,              -- cron expression; NULL = one-shot
   recurrence_until INTEGER,     -- epoch ms; retire once next occurrence would pass this
-  recurrence_count INTEGER      -- remaining fires; retire at 0
+  recurrence_count INTEGER,     -- remaining fires; retire at 0
+  attempts INTEGER NOT NULL DEFAULT 0  -- failed dispatch count; retire to 'failed' at MAX_ATTEMPTS
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_due ON jobs(status, fire_at);
 
