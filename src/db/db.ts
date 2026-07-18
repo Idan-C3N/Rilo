@@ -60,5 +60,8 @@ export function migrate(db: DB): void {
     if (!jobCols.has('recurrence_count')) {
       db.exec('ALTER TABLE jobs ADD COLUMN recurrence_count INTEGER');
     }
+    if (!jobCols.has('attempts')) {
+      db.exec('ALTER TABLE jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0');
+    }
   }
 }

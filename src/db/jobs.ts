@@ -8,10 +8,11 @@ export interface Job {
   type: JobType;
   fire_at: number;
   payload: Record<string, unknown>;
-  status: 'pending' | 'done' | 'cancelled';
+  status: 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
   recurrence: string | null;
   recurrence_until: number | null;
   recurrence_count: number | null;
+  attempts: number;
 }
 
 interface Row {
@@ -24,6 +25,7 @@ interface Row {
   recurrence: string | null;
   recurrence_until: number | null;
   recurrence_count: number | null;
+  attempts: number;
 }
 
 function hydrate(r: Row): Job {
@@ -31,6 +33,7 @@ function hydrate(r: Row): Job {
     id: r.id, user_id: r.user_id, type: r.type, fire_at: r.fire_at,
     payload: JSON.parse(r.payload_json), status: r.status,
     recurrence: r.recurrence, recurrence_until: r.recurrence_until, recurrence_count: r.recurrence_count,
+    attempts: r.attempts,
   };
 }
 
